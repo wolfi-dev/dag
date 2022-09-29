@@ -10,6 +10,8 @@ To generate the full `dag.svg` of all build-time dependencies, run this inside t
 go run ./
 ```
 
+[![dag.svg](./images/dag.svg)
+
 ## Subgraphs
 
 `dag` can also generate subgraphs for only some packages.
@@ -25,6 +27,8 @@ To generate a graph for only some packages:
 ```
 go run ./ brotli git-lfs attr
 ```
+
+[![dag.svg](./images/sub.svg)
 
 ### Output
 
