@@ -1,4 +1,4 @@
-module github.com/wolfi-dev/os
+module github.com/wolfi-dev/dag
 
 go 1.19
 
