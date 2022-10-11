@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -13,7 +14,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var out = flag.String("f", "dag.svg", "output file")
+var (
+	// TODO: use cobra, have separate subcommands for svg vs text output.
+	out = flag.String("f", "dag.svg", "output file")
+	txt = flag.Bool("txt", false, "output newline-delimited sorted downstream deps, instead of generating SVG")
+	dir = flag.String("d", ".", "directory to search for melange configs")
+)
 
 type Graph struct {
 	Nodes       map[string]struct{}
@@ -65,12 +71,12 @@ func main() {
 	flag.Parse()
 
 	g := NewGraph()
-	if err := filepath.Walk(".", func(path string, info fs.FileInfo, err error) error {
+	if err := filepath.Walk(*dir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		// Don't walk into directories.
-		if path != "." && info.IsDir() {
+		if path != *dir && info.IsDir() {
 			return filepath.SkipDir
 		}
 		if strings.HasSuffix(path, ".yaml") {
@@ -119,14 +125,39 @@ func main() {
 
 	if len(flag.Args()) == 0 {
 		g.summarize()
-		g.Viz()
+		g.viz()
 	} else {
 		sg := NewGraph()
 		for _, node := range flag.Args() {
 			sg.crawl(g, node)
 		}
 		sg.summarize()
-		sg.Viz()
+		if *txt {
+			sg.text(flag.Args())
+		} else {
+			sg.viz()
+		}
+	}
+}
+
+func (g *Graph) text(roots []string) {
+	seen := make(map[string]struct{})
+
+	var walk func(node string)
+	walk = func(node string) {
+		if _, ok := seen[node]; ok {
+			return
+		}
+		seen[node] = struct{}{}
+		fmt.Println(node)
+		edges := g.Edges[node]
+		sort.Strings(edges) // sorted for determinism
+		for _, dep := range edges {
+			walk(dep)
+		}
+	}
+	for _, root := range roots {
+		walk(root)
 	}
 }
 
@@ -151,7 +182,7 @@ func (sg Graph) crawl(g Graph, node string) {
 	}
 }
 
-func (g Graph) Viz() {
+func (g Graph) viz() {
 	v := graphviz.New()
 	gr, err := v.Graph()
 	if err != nil {
