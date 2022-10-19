@@ -17,7 +17,9 @@ func cmdText() *cobra.Command {
 		Short: "Print a sorted list of downstream dependent packages",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO(jason): Accept and translate --arch=arm64 -> aarch64, etc.
+			if arch == "arm64" {
+				arch = "aarch64"
+			}
 
 			g := graph.New()
 			if err := g.Walk(dir); err != nil {
@@ -36,7 +38,15 @@ func cmdText() *cobra.Command {
 }
 
 func text(g graph.Graph, roots []string, arch string, w io.Writer) {
+	all := list(g, roots)
+	for _, node := range all {
+		fmt.Fprintln(w, g.Package(node).MakeTarget(arch))
+	}
+}
+
+func list(g graph.Graph, roots []string) []string {
 	seen := make(map[string]struct{})
+	var all []string
 
 	var walk func(node string)
 	walk = func(node string) {
@@ -45,7 +55,7 @@ func text(g graph.Graph, roots []string, arch string, w io.Writer) {
 		}
 		seen[node] = struct{}{}
 		edges := g.Edges[node]
-		fmt.Fprintln(w, g.Package(node).MakeTarget(arch))
+		all = append(all, node)
 		sort.Strings(edges) // sorted for determinism
 		for _, dep := range edges {
 			walk(dep)
@@ -54,4 +64,5 @@ func text(g graph.Graph, roots []string, arch string, w io.Writer) {
 	for _, root := range roots {
 		walk(root)
 	}
+	return all
 }
