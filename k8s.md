@@ -2,9 +2,12 @@
 
 Prerequisites:
 - a Kubernetes cluster (KinD, GKE)
-- a public GCR repo (only required for now), which you set to the `REPO` env var
+- a container image repo, which you set to the `REPO` env var (e.g., `REPO=gcr.io/jason-chainguard/dag`)
 
-e.g., `REPO=gcr.io/jason-chainguard-public/dag`
+If running on KinD the image has to be publicly-readable.
+If running on GKE the image has to be in GCR/AR, in the same project as the cluster.
+
+## Getting Started
 
 Create a pod that runs the build for `brotli` and everything that depends on it:
 
