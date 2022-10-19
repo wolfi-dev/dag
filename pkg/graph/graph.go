@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// TODO(jason): Add a method to emit roots (nodes that have no incoming edges).
+
 type Graph struct {
 	Nodes       map[string]struct{}
 	Edges, Back map[string][]string

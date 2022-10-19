@@ -38,14 +38,24 @@ dag svg brotli git-lfs attr
 
 ![partial dependency graph](./images/sub.svg)
 
+### Melange Directory
+
+By default `dag` looks for Melange configs in the current directory.
+
+It can look in another directory with the `--dir` or `-d` flag:
+
+```
+dag svg -d ../wolfi-dev/
+```
+
 ### Output File
 
 `dag` writes a file called `dag.svg` by default.
 
-To change this, pass `-f` _before any positional args_.
+To change this, pass the `--out` or `-o` flag:
 
 ```
-dag svg -f brotli.svg brotli
+dag svg -o brotli.svg brotli
 ```
 
 It will only generate SVG.

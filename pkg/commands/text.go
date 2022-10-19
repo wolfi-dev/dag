@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -24,7 +26,7 @@ func cmdText() *cobra.Command {
 			if err := g.Validate(); err != nil {
 				return err
 			}
-			text(g, args, arch)
+			text(g, args, arch, os.Stdout)
 			return nil
 		},
 	}
@@ -33,7 +35,7 @@ func cmdText() *cobra.Command {
 	return text
 }
 
-func text(g graph.Graph, roots []string, arch string) {
+func text(g graph.Graph, roots []string, arch string, w io.Writer) {
 	seen := make(map[string]struct{})
 
 	var walk func(node string)
@@ -43,7 +45,7 @@ func text(g graph.Graph, roots []string, arch string) {
 		}
 		seen[node] = struct{}{}
 		edges := g.Edges[node]
-		fmt.Println(g.Package(node).MakeTarget(arch))
+		fmt.Fprintln(w, g.Package(node).MakeTarget(arch))
 		sort.Strings(edges) // sorted for determinism
 		for _, dep := range edges {
 			walk(dep)

@@ -13,6 +13,10 @@ func New() *cobra.Command {
 			cmd.Help()
 		},
 	}
-	root.AddCommand(cmdSVG(), cmdText())
+	root.AddCommand(
+		cmdSVG(),
+		cmdText(),
+		cmdPod(),
+	)
 	return root
 }
