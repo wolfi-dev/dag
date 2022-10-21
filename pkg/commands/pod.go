@@ -29,6 +29,7 @@ import (
 func cmdPod() *cobra.Command {
 	var dir, arch, repo, ns, cpu, ram, sa, sdkimg string
 	var create, watch bool
+	var pendingTimeout time.Duration
 	pod := &cobra.Command{
 		Use:   "pod",
 		Short: "Generate a kubernetes pod to run the build",
@@ -139,7 +140,7 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 			}
 
 			if create {
-				k8s, err := newK8s()
+				k8s, err := newK8s(pendingTimeout)
 				if err != nil {
 					return err
 				}
@@ -167,15 +168,18 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 	pod.Flags().BoolVar(&create, "create", true, "create the pod")
 	pod.Flags().BoolVarP(&watch, "watch", "w", true, "watch the pod, stream logs")
 	pod.Flags().StringVar(&sdkimg, "sdk-image", "cgr.dev/chainguard/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
+	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", time.Minute, "timeout for the pod to start")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
 
 type k8s struct {
-	clientset kubernetes.Clientset
+	clientset      kubernetes.Clientset
+	pendingTimeout time.Duration
+	started        bool
 }
 
-func newK8s() (*k8s, error) {
+func newK8s(pendingTimeout time.Duration) (*k8s, error) {
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
 		&clientcmd.ConfigOverrides{},
@@ -187,7 +191,10 @@ func newK8s() (*k8s, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &k8s{clientset: *clientset}, nil
+	return &k8s{
+		clientset:      *clientset,
+		pendingTimeout: pendingTimeout,
+	}, nil
 }
 
 func (k *k8s) create(ctx context.Context, p *corev1.Pod) (*corev1.Pod, error) {
@@ -201,6 +208,7 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 		select {
 		case <-c:
 			log.Println("interrupted, deleting pod")
+			// TODO: Prompt to delete the pod.
 			if err := k.clientset.CoreV1().Pods(p.Namespace).Delete(context.Background(), p.Name, metav1.DeleteOptions{}); err != nil {
 				log.Println("failed to delete pod:", err)
 			}
@@ -221,6 +229,14 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(k.pendingTimeout):
+			if !k.started {
+				// TODO: Prompt to delete the pod.
+				// TODO: Wait for pod to be deleted.
+				return fmt.Errorf("timed out waiting for pod to start")
+			}
 		case e := <-w.ResultChan():
 			var ok bool
 			p, ok = e.Object.(*corev1.Pod)
@@ -246,6 +262,7 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				time.Sleep(time.Second)
 			case corev1.PodRunning:
 				log.Printf("running... took %s", time.Now().Sub(p.CreationTimestamp.Time))
+				k.started = true
 
 				// Start streaming logs.
 				errCh := make(chan error)
