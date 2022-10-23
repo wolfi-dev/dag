@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +26,7 @@ import (
 )
 
 func cmdPod() *cobra.Command {
-	var dir, arch, repo, ns, cpu, ram, sa, sdkimg string
+	var dir, arch, repo, ns, cpu, ram, sa, sdkimg, cachedig string
 	var create, watch bool
 	var pendingTimeout time.Duration
 	pod := &cobra.Command{
@@ -104,6 +103,9 @@ func cmdPod() *cobra.Command {
 						VolumeMounts: []corev1.VolumeMount{{
 							Name:      "workspace",
 							MountPath: "/workspace",
+						}, {
+							Name:      "cache",
+							MountPath: "/var/cache/melange",
 						}},
 						SecurityContext: &corev1.SecurityContext{
 							Privileged: pointer.Bool(true),
@@ -112,6 +114,7 @@ func cmdPod() *cobra.Command {
 							"sh", "-c",
 							fmt.Sprintf(`
 set -euo pipefail
+ls /var/cache/melange
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make local-melange.rsa
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(targets, " ")),
 						},
@@ -128,8 +131,27 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 						VolumeSource: corev1.VolumeSource{
 							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
+					}, {
+						Name: "cache",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
 					}},
 				},
+			}
+
+			// If the user specified a cache bundle image, run it as an init
+			// container, which will populate the cache volume for the build container.
+			if cachedig != "" {
+				p.Spec.InitContainers = append(p.Spec.InitContainers, corev1.Container{
+					Name:       "populate-cache",
+					Image:      cachedig,
+					WorkingDir: "/var/cache/melange",
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "cache",
+						MountPath: "/var/cache/melange",
+					}},
+				})
 			}
 
 			if arch == "aarch64" {
@@ -160,7 +182,7 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 	}
 	pod.Flags().StringVarP(&dir, "dir", "d", ".", "directory to search for melange configs")
 	pod.Flags().StringVarP(&arch, "arch", "a", "x86_64", "architecture to build for")
-	pod.Flags().StringVar(&repo, "repo", "", "repository to push the bundle to")
+	pod.Flags().StringVar(&repo, "repo", "", "OCI repository to push the bundle to")
 	pod.Flags().StringVarP(&ns, "namespace", "n", "default", "namespace to create the pod in")
 	pod.Flags().StringVar(&cpu, "cpu", "1", "CPU request")
 	pod.Flags().StringVar(&ram, "ram", "2Gi", "RAM request")
@@ -169,6 +191,7 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 	pod.Flags().BoolVarP(&watch, "watch", "w", true, "watch the pod, stream logs")
 	pod.Flags().StringVar(&sdkimg, "sdk-image", "cgr.dev/chainguard/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
 	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", time.Minute, "timeout for the pod to start")
+	pod.Flags().StringVar(&cachedig, "cache-bundle", "", "if set, cache bundle reference by digest")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
@@ -297,5 +320,4 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 			}
 		}
 	}
-	return errors.New("watch channel closed")
 }

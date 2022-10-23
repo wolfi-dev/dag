@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wolfi-dev/dag/pkg"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,22 +55,7 @@ func (g Graph) Walk(dir string) error {
 				return err
 			}
 			defer f.Close()
-			var c struct {
-				Package struct {
-					Name    string `yaml:"name"`
-					Version string `yaml:"version"`
-					Epoch   string `yaml:"epoch"`
-				}
-				Environment struct {
-					Contents struct {
-						Packages []string
-					}
-				}
-				Subpackages []struct {
-					Name string
-				}
-			}
-
+			var c pkg.Config
 			if err := yaml.NewDecoder(f).Decode(&c); err != nil {
 				return err
 			}

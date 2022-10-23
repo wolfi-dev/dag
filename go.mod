@@ -8,10 +8,12 @@ replace github.com/goccy/go-graphviz => github.com/n3wscott/go-graphviz v0.0.10-
 replace k8s.io/client-go => k8s.io/client-go v0.25.3
 
 require (
+	github.com/dustin/go-humanize v1.0.0
 	github.com/goccy/go-graphviz v0.0.9
 	github.com/google/go-containerregistry v0.11.0
 	github.com/mattmoor/mink v1.3.1
 	github.com/spf13/cobra v1.6.0
+	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.25.3
 	k8s.io/apimachinery v0.25.3
@@ -57,7 +59,7 @@ require (
 	golang.org/x/image v0.0.0-20200119044424-58c23975cae1 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
 	golang.org/x/oauth2 v0.0.0-20220718184931-c8730f7fcb92 // indirect
-	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
@@ -65,7 +67,6 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.70.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	knative.dev/pkg v0.0.0-20220314165618-a637a96a1bd9 // indirect

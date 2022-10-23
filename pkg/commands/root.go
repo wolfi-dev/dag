@@ -18,6 +18,7 @@ func New() *cobra.Command {
 		cmdSVG(),
 		cmdText(),
 		cmdPod(),
+		cmdCache(),
 	)
 	return root
 }

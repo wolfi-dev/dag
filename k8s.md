@@ -18,10 +18,11 @@ export PROJECT=$(gcloud config get-value project)
 ```
 gcloud container clusters create tmp-cluster \
     --zone            us-central1-b  \
-    --machine-type    e2-standard-32 \
-    --num-nodes       1 \
+    --enable-autoprovisioning \
     --release-channel rapid \
-    --workload-pool=${PROJECT}.svc.id.goog
+    --workload-pool="${PROJECT}.svc.id.goog" \
+    --max-cpu=100 --max-memory=100 \
+    --num-nodes=1
 ```
 
 ## Getting Started
@@ -99,7 +100,9 @@ gcloud container node-pools create arm-nodes \
     --num-nodes      1
 ```
 
-(Arm nodes currently require `us-central1` and a recent Kubernetes version, which you get from the Rapid release channel.)
+(Arm nodes currently require `us-central1` and a recent Kubernetes version, which you get from the Rapid release channel.
+Arm nodes do not currently support auto-provisioning, so these nodes will just be on -- and charging money -- all the time.
+Delete this node pool when you don't use it.)
 
 Then request an arm64 build and see logs:
 
@@ -120,3 +123,23 @@ By default, build pods have 1 CPU and 2 GB or memory.
 You can request more, for example `dag pod --cpu=4 --ram=12Gi ...`
 
 Note: Check the nodes you configured for the cluster, to make sure you're not requesting a Pod that won't fit on any nodes.
+
+## Pre-caching remote dependencies
+
+You can pre-fetch `uri`s defined in the pipelines, and add them to your build.
+
+Eventually this will aid in hermetic builds, see:
+- https://github.com/chainguard-dev/melange/pull/143
+- https://github.com/chainguard-dev/melange/pull/145
+
+To populate the cache:
+
+```
+dag cache
+```
+
+This will pull and verify all the URLs, and put them in `./cache`.
+
+You can also pass `--repo` to push a bundle image containing the pre-cached dependencies.
+
+You can pass this to a build, with `--cache-bundle`, which will pull the image and pre-populate `/var/cache/melange` in the build context with your cached dependencies.

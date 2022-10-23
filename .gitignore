@@ -1,2 +1,5 @@
 dag
 dag.svg
+
+packages/*
+cache/*
