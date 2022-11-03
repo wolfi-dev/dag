@@ -2,16 +2,17 @@ package commands
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"sort"
-
+	"github.com/dominikbraun/graph"
 	"github.com/spf13/cobra"
-	"github.com/wolfi-dev/dag/pkg/graph"
+	"github.com/wolfi-dev/dag/pkg/pkggraph"
+	"io"
+	"log"
+	"os"
 )
 
 func cmdText() *cobra.Command {
 	var dir, arch string
+	var showDependents bool
 	text := &cobra.Command{
 		Use:   "text",
 		Short: "Print a sorted list of downstream dependent packages",
@@ -21,48 +22,70 @@ func cmdText() *cobra.Command {
 				arch = "aarch64"
 			}
 
-			g := graph.New()
-			if err := g.Walk(dir); err != nil {
+			g, err := pkggraph.New(os.DirFS(dir))
+			if err != nil {
 				return err
 			}
-			if err := g.Validate(); err != nil {
+
+			if len(args) == 0 {
+				if showDependents {
+					log.Print("warning: the 'show dependents' option has no effect without specifying one or more package names")
+				}
+			} else {
+				// ensure all packages exist in the graph
+				for _, arg := range args {
+					if _, err := g.Graph.Vertex(arg); err == graph.ErrVertexNotFound {
+						return fmt.Errorf("package %q not found in graph", arg)
+					}
+				}
+
+				// determine if we're examining dependencies or dependents
+				var subgraph *pkggraph.Graph
+				if showDependents {
+					leaves := args
+					subgraph, err = g.SubgraphWithLeaves(leaves)
+					if err != nil {
+						return err
+					}
+				} else {
+					roots := args
+					subgraph, err = g.SubgraphWithRoots(roots)
+					if err != nil {
+						return err
+					}
+				}
+
+				g = subgraph
+			}
+
+			err = text(*g, arch, os.Stdout)
+			if err != nil {
 				return err
 			}
-			text(g, args, arch, os.Stdout)
+
 			return nil
 		},
 	}
 	text.Flags().StringVarP(&dir, "dir", "d", ".", "directory to search for melange configs")
 	text.Flags().StringVarP(&arch, "arch", "a", "x86_64", "architecture to build for")
+	text.Flags().BoolVarP(&showDependents, "show-dependents", "D", false, "show packages that depend on these packages, instead of these packages' dependencies")
 	return text
 }
 
-func text(g graph.Graph, roots []string, arch string, w io.Writer) {
-	all := list(g, roots)
+func text(g pkggraph.Graph, arch string, w io.Writer) error {
+	all, err := g.Sorted()
+	if err != nil {
+		return err
+	}
+
 	for _, node := range all {
-		fmt.Fprintln(w, g.Package(node).MakeTarget(arch))
-	}
-}
-
-func list(g graph.Graph, roots []string) []string {
-	seen := make(map[string]struct{})
-	var all []string
-
-	var walk func(node string)
-	walk = func(node string) {
-		if _, ok := seen[node]; ok {
-			return
+		target, err := g.MakeTarget(node, arch)
+		if err != nil {
+			return err
 		}
-		seen[node] = struct{}{}
-		edges := g.Edges[node]
-		all = append(all, node)
-		sort.Strings(edges) // sorted for determinism
-		for _, dep := range edges {
-			walk(dep)
-		}
+
+		fmt.Fprintf(w, "%s\n", target)
 	}
-	for _, root := range roots {
-		walk(root)
-	}
-	return all
+
+	return nil
 }

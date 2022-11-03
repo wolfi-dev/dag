@@ -21,6 +21,8 @@ require (
 	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed
 )
 
+require github.com/dominikbraun/graph v0.14.0
+
 require (
 	cloud.google.com/go/compute v1.7.0 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
@@ -59,7 +61,7 @@ require (
 	golang.org/x/image v0.0.0-20200119044424-58c23975cae1 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
 	golang.org/x/oauth2 v0.0.0-20220718184931-c8730f7fcb92 // indirect
-	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
+	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect

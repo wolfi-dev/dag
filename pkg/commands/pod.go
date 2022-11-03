@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,29 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
 )
+
+func list(g graph.Graph, roots []string) []string {
+	seen := make(map[string]struct{})
+	var all []string
+
+	var walk func(node string)
+	walk = func(node string) {
+		if _, ok := seen[node]; ok {
+			return
+		}
+		seen[node] = struct{}{}
+		edges := g.Edges[node]
+		all = append(all, node)
+		sort.Strings(edges) // sorted for determinism
+		for _, dep := range edges {
+			walk(dep)
+		}
+	}
+	for _, root := range roots {
+		walk(root)
+	}
+	return all
+}
 
 func cmdPod() *cobra.Command {
 	var dir, arch, repo, ns, cpu, ram, sa, sdkimg, cachedig string
