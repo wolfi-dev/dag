@@ -1,14 +1,18 @@
 package pkggraph
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/Masterminds/sprig"
 	"github.com/dominikbraun/graph"
 	"github.com/wolfi-dev/dag/pkg"
 	"gopkg.in/yaml.v3"
+	"io"
 	"io/fs"
 	"log"
 	"sort"
 	"strings"
+	"text/template"
 )
 
 // A Graph represents an interdependent set of Wolfi packages defined in one or more Melange configuration files.
@@ -24,7 +28,7 @@ func newGraph() graph.Graph[string, string] {
 
 // New returns a new Graph using Melange configuration discovered in the given directory.
 //
-// The input is any fs.FS filesystem abstraction. Given a directory path, you can call New like this:
+// The input is any fs.FS filesystem implementation. Given a directory path, you can call New like this:
 //
 // pkggraph.New(os.DirFS('path/to/directory'))
 func New(dirFS fs.FS) (*Graph, error) {
@@ -49,9 +53,9 @@ func New(dirFS fs.FS) (*Graph, error) {
 			}
 			defer f.Close()
 
-			var c pkg.Config
-			if err := yaml.NewDecoder(f).Decode(&c); err != nil {
-				return fmt.Errorf("unable to decode %q: %w", path, err)
+			c, err := decodeMelangeYAML(f)
+			if err != nil {
+				return err
 			}
 			name := c.Package.Name
 			if name == "" {
@@ -119,6 +123,41 @@ func New(dirFS fs.FS) (*Graph, error) {
 		configs:  configs,
 		packages: packages,
 	}, nil
+}
+
+func decodeMelangeYAML(f fs.File) (pkg.Config, error) {
+	stat, err := f.Stat()
+	if err != nil {
+		return pkg.Config{}, err
+	}
+
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+	}
+
+	protected := string(b)
+	for k, v := range substitutionReplacements() {
+		protected = strings.ReplaceAll(protected, k, v)
+	}
+
+	tmpl, err := template.New("").Funcs(sprig.TxtFuncMap()).Parse(protected)
+	if err != nil {
+		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+	}
+
+	buf := new(bytes.Buffer)
+	err = tmpl.Execute(buf, nil)
+	if err != nil {
+		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+	}
+
+	var c pkg.Config
+	if err := yaml.NewDecoder(buf).Decode(&c); err != nil {
+		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+	}
+
+	return c, nil
 }
 
 func isErrCycle(err error) bool {
