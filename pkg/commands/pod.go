@@ -2,12 +2,12 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -15,7 +15,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mattmoor/mink/pkg/bundles/kontext"
 	"github.com/spf13/cobra"
-	"github.com/wolfi-dev/dag/pkg/graph"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,29 +24,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
 )
-
-func list(g graph.Graph, roots []string) []string {
-	seen := make(map[string]struct{})
-	var all []string
-
-	var walk func(node string)
-	walk = func(node string) {
-		if _, ok := seen[node]; ok {
-			return
-		}
-		seen[node] = struct{}{}
-		edges := g.Edges[node]
-		all = append(all, node)
-		sort.Strings(edges) // sorted for determinism
-		for _, dep := range edges {
-			walk(dep)
-		}
-	}
-	for _, root := range roots {
-		walk(root)
-	}
-	return all
-}
 
 func cmdPod() *cobra.Command {
 	var dir, arch, repo, ns, cpu, ram, sa, sdkimg, cachedig string
@@ -66,18 +42,7 @@ func cmdPod() *cobra.Command {
 
 			targets := []string{"all"}
 			if len(args) > 0 {
-				g := graph.New()
-				if err := g.Walk(dir); err != nil {
-					return err
-				}
-				if err := g.Validate(); err != nil {
-					return err
-				}
-				pkgs := list(g, args)
-				targets = nil
-				for _, p := range pkgs {
-					targets = append(targets, g.Package(p).MakeTarget(arch))
-				}
+				return errors.New("pod command doesn't support building specific targets (yet)")
 			}
 
 			// Bundle the source context into an image.
