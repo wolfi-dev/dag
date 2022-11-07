@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/dominikbraun/graph"
 	"github.com/spf13/cobra"
-	"github.com/wolfi-dev/dag/pkg/pkggraph"
+	"github.com/wolfi-dev/dag/pkg"
 	"io"
 	"log"
 	"os"
@@ -21,7 +21,7 @@ func cmdText() *cobra.Command {
 				arch = "aarch64"
 			}
 
-			g, err := pkggraph.New(os.DirFS(dir))
+			g, err := pkg.NewGraph(os.DirFS(dir))
 			if err != nil {
 				return err
 			}
@@ -39,7 +39,7 @@ func cmdText() *cobra.Command {
 				}
 
 				// determine if we're examining dependencies or dependents
-				var subgraph *pkggraph.Graph
+				var subgraph *pkg.Graph
 				if showDependents {
 					leaves := args
 					subgraph, err = g.SubgraphWithLeaves(leaves)
@@ -71,7 +71,7 @@ func cmdText() *cobra.Command {
 	return text
 }
 
-func text(g pkggraph.Graph, arch string, w io.Writer) error {
+func text(g pkg.Graph, arch string, w io.Writer) error {
 	all, err := g.Sorted()
 	if err != nil {
 		return err

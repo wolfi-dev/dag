@@ -1,11 +1,10 @@
-package pkggraph
+package pkg
 
 import (
 	"bytes"
 	"fmt"
 	"github.com/Masterminds/sprig"
 	"github.com/dominikbraun/graph"
-	"github.com/wolfi-dev/dag/pkg"
 	"gopkg.in/yaml.v3"
 	"io"
 	"io/fs"
@@ -18,7 +17,7 @@ import (
 // A Graph represents an interdependent set of Wolfi packages defined in one or more Melange configuration files.
 type Graph struct {
 	Graph    graph.Graph[string, string]
-	configs  map[string]pkg.Config
+	configs  map[string]Config
 	packages []string
 }
 
@@ -26,16 +25,16 @@ func newGraph() graph.Graph[string, string] {
 	return graph.New(graph.StringHash, graph.Directed(), graph.Acyclic(), graph.PreventCycles())
 }
 
-// New returns a new Graph using Melange configuration discovered in the given directory.
+// NewGraph returns a new Graph using Melange configuration discovered in the given directory.
 //
-// The input is any fs.FS filesystem implementation. Given a directory path, you can call New like this:
+// The input is any fs.FS filesystem implementation. Given a directory path, you can call NewGraph like this:
 //
-// pkggraph.New(os.DirFS('path/to/directory'))
-func New(dirFS fs.FS) (*Graph, error) {
+// pkg.NewGraph(os.DirFS('path/to/directory'))
+func NewGraph(dirFS fs.FS) (*Graph, error) {
 	g := newGraph()
 
 	var packages []string
-	configs := make(map[string]pkg.Config)
+	configs := make(map[string]Config)
 
 	err := fs.WalkDir(dirFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -125,15 +124,15 @@ func New(dirFS fs.FS) (*Graph, error) {
 	}, nil
 }
 
-func decodeMelangeYAML(f fs.File) (pkg.Config, error) {
+func decodeMelangeYAML(f fs.File) (Config, error) {
 	stat, err := f.Stat()
 	if err != nil {
-		return pkg.Config{}, err
+		return Config{}, err
 	}
 
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
 	}
 
 	protected := string(b)
@@ -143,18 +142,18 @@ func decodeMelangeYAML(f fs.File) (pkg.Config, error) {
 
 	tmpl, err := template.New("").Funcs(sprig.TxtFuncMap()).Parse(protected)
 	if err != nil {
-		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
 	}
 
 	buf := new(bytes.Buffer)
 	err = tmpl.Execute(buf, nil)
 	if err != nil {
-		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
 	}
 
-	var c pkg.Config
+	var c Config
 	if err := yaml.NewDecoder(buf).Decode(&c); err != nil {
-		return pkg.Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
+		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
 	}
 
 	return c, nil
@@ -169,7 +168,7 @@ func isErrCycle(err error) bool {
 // if the package is present in the Graph. If it's not present, Config returns
 // nil. Providing the name of a subpackage will return the configuration of the
 // subpackage's origin package.
-func (g Graph) Config(name string) *pkg.Config {
+func (g Graph) Config(name string) *Config {
 	if g.configs == nil {
 		// this would be unexpected
 		return nil
@@ -216,7 +215,7 @@ func (g Graph) Sorted() ([]string, error) {
 // of all packages whose names were given as the `roots` argument.
 func (g Graph) SubgraphWithRoots(roots []string) (*Graph, error) {
 	subgraph := newGraph()
-	configs := make(map[string]pkg.Config)
+	configs := make(map[string]Config)
 	var packages []string
 
 	adjacencyMap, err := g.Graph.AdjacencyMap()
@@ -261,7 +260,7 @@ func (g Graph) SubgraphWithRoots(roots []string) (*Graph, error) {
 // are dependent on the packages whose names were given as the `leaves` argument.
 func (g Graph) SubgraphWithLeaves(leaves []string) (*Graph, error) {
 	subgraph := newGraph()
-	configs := make(map[string]pkg.Config)
+	configs := make(map[string]Config)
 	var packages []string
 
 	predecessorMap, err := g.Graph.PredecessorMap()

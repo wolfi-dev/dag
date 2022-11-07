@@ -5,7 +5,7 @@ import (
 	"github.com/dominikbraun/graph"
 	"github.com/goccy/go-graphviz"
 	"github.com/spf13/cobra"
-	"github.com/wolfi-dev/dag/pkg/pkggraph"
+	"github.com/wolfi-dev/dag/pkg"
 	"log"
 	"os"
 )
@@ -17,7 +17,7 @@ func cmdSVG() *cobra.Command {
 		Use:   "svg",
 		Short: "Generate a graphviz SVG",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, err := pkggraph.New(os.DirFS(dir))
+			g, err := pkg.NewGraph(os.DirFS(dir))
 			if err != nil {
 				return err
 			}
@@ -35,7 +35,7 @@ func cmdSVG() *cobra.Command {
 				}
 
 				// determine if we're examining dependencies or dependents
-				var subgraph *pkggraph.Graph
+				var subgraph *pkg.Graph
 				if showDependents {
 					leaves := args
 					subgraph, err = g.SubgraphWithLeaves(leaves)
@@ -65,12 +65,12 @@ func cmdSVG() *cobra.Command {
 	return svg
 }
 
-func summarize(g pkggraph.Graph) {
+func summarize(g pkg.Graph) {
 	log.Println("nodes:", g.Graph.Order())
 	log.Println("edges:", g.Graph.Size())
 }
 
-func viz(g pkggraph.Graph, out string) (err error) {
+func viz(g pkg.Graph, out string) (err error) {
 	v := graphviz.New()
 	gr, err := v.Graph()
 	if err != nil {

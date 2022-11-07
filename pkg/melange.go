@@ -1,4 +1,4 @@
-package pkggraph
+package pkg
 
 const (
 	substitutionPackageName    = "${{package.name}}"
