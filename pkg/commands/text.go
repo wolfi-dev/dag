@@ -16,7 +16,6 @@ func cmdText() *cobra.Command {
 	text := &cobra.Command{
 		Use:   "text",
 		Short: "Print a sorted list of downstream dependent packages",
-		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if arch == "arm64" {
 				arch = "aarch64"
