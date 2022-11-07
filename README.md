@@ -33,7 +33,7 @@ dag svg brotli
 To generate a graph for only some packages:
 
 ```
-dag svg brotli git-lfs attr
+dag svg brotli attr
 ```
 
 ![partial dependency graph](./images/sub.svg)
@@ -75,3 +75,17 @@ packages/x86_64/ca-certificates-bundle-20220614-r2.apk
 ```
 
 This can be fed to `make` to build only downstream packages of a package.
+
+### Dependencies vs. dependents
+
+By default, the `dag svg ...` and `dag text ...` commands show you the **_dependencies_** of the package(s) you supply as arguments to the command.
+
+For example, running `dag svg go` will show you the packages that `go` depends on at build-time:
+
+![packages that go depends on](./images/go-dependencies.svg)
+
+To look instead at the packages that are **_dependent on_** the package(s) you supply, use the `--show-dependents` (or `-D`) flag.
+
+For example, running `dag svg go -D` will show you the packages that depend on `go` at build-time:
+
+![packages that depend on go](./images/go-dependents.svg)
