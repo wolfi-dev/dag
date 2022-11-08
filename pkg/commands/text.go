@@ -2,12 +2,13 @@ package commands
 
 import (
 	"fmt"
-	"github.com/dominikbraun/graph"
-	"github.com/spf13/cobra"
-	"github.com/wolfi-dev/dag/pkg"
 	"io"
 	"log"
 	"os"
+
+	"github.com/dominikbraun/graph"
+	"github.com/spf13/cobra"
+	"github.com/wolfi-dev/dag/pkg"
 )
 
 func cmdText() *cobra.Command {
