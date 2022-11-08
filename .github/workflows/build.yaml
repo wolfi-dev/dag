@@ -19,5 +19,6 @@ jobs:
           go-version: 1.19
           check-latest: true
 
+      - uses: chainguard-dev/actions/goimports@main
       - run: go build ./...
       - run: go test ./...
