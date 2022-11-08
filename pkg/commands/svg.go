@@ -2,12 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"log"
+	"os"
+
 	"github.com/dominikbraun/graph"
 	"github.com/goccy/go-graphviz"
 	"github.com/spf13/cobra"
 	"github.com/wolfi-dev/dag/pkg"
-	"log"
-	"os"
 )
 
 func cmdSVG() *cobra.Command {

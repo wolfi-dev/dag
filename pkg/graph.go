@@ -3,15 +3,16 @@ package pkg
 import (
 	"bytes"
 	"fmt"
-	"github.com/Masterminds/sprig"
-	"github.com/dominikbraun/graph"
-	"gopkg.in/yaml.v3"
 	"io"
 	"io/fs"
 	"log"
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/Masterminds/sprig"
+	"github.com/dominikbraun/graph"
+	"gopkg.in/yaml.v3"
 )
 
 // A Graph represents an interdependent set of Wolfi packages defined in one or more Melange configuration files.
