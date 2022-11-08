@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wolfi-dev/dag/pkg"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mattmoor/mink/pkg/bundles/kontext"
@@ -42,7 +43,25 @@ func cmdPod() *cobra.Command {
 
 			targets := []string{"all"}
 			if len(args) > 0 {
-				return errors.New("pod command doesn't support building specific targets (yet)")
+				g, err := pkg.NewGraph(os.DirFS(dir))
+				if err != nil {
+					return err
+				}
+
+				subgraph, err := g.SubgraphWithRoots(args)
+				if err != nil {
+					return err
+				}
+
+				targets = nil
+				for _, node := range subgraph.Nodes() {
+					t, err := g.MakeTarget(node, arch)
+					if err != nil {
+						return err
+					}
+
+					targets = append(targets, t)
+				}
 			}
 
 			// Bundle the source context into an image.
