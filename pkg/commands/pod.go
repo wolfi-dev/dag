@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -41,27 +42,28 @@ func cmdPod() *cobra.Command {
 				arch = "aarch64"
 			}
 
-			targets := []string{"all"}
+			var packages []string
 			if len(args) > 0 {
 				g, err := pkg.NewGraph(os.DirFS(dir))
 				if err != nil {
 					return err
 				}
 
-				subgraph, err := g.SubgraphWithRoots(args)
-				if err != nil {
-					return err
+				d := map[string]struct{}{}
+				for _, n := range args {
+					for _, dep := range g.DependenciesOf(n) {
+						d[dep] = struct{}{}
+					}
 				}
-
-				targets = nil
-				for _, node := range subgraph.Nodes() {
-					t, err := g.MakeTarget(node, arch)
+				packages = make([]string, 0, len(d))
+				for dep := range d {
+					p, err := g.Package(dep)
 					if err != nil {
 						return err
 					}
-
-					targets = append(targets, t)
+					packages = append(packages, strings.TrimPrefix(p, "packages/"))
 				}
+				sort.Strings(packages)
 			}
 
 			// Bundle the source context into an image.
@@ -120,11 +122,16 @@ func cmdPod() *cobra.Command {
 						},
 						Command: []string{
 							"sh", "-c",
+							// TODO(jason): make this a real Go template.
 							fmt.Sprintf(`
 set -euo pipefail
-ls /var/cache/melange
+mkdir -p packages/%s
+declare -a packages=(%s)
+for p in packages; do
+  curl -o packages/%s https://wolfi-production-registry-destination/os/%s/$p
+done
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make local-melange.rsa
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(targets, " ")),
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make`, arch, strings.Join(packages, " "), arch, arch),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -169,23 +176,23 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 				}
 			}
 
-			if create {
-				k8s, err := newK8s(pendingTimeout)
-				if err != nil {
-					return err
-				}
-				p, err = k8s.create(ctx, p)
-				if err != nil {
-					return err
-				}
-				log.Println("created pod:", p.Name)
-				if watch {
-					return k8s.watch(ctx, p)
-				}
-				return nil
+			if !create {
+				return json.NewYAMLSerializer(json.DefaultMetaFactory, nil, nil).Encode(p, os.Stdout)
 			}
 
-			return json.NewYAMLSerializer(json.DefaultMetaFactory, nil, nil).Encode(p, os.Stdout)
+			k8s, err := newK8s(pendingTimeout)
+			if err != nil {
+				return err
+			}
+			p, err = k8s.create(ctx, p)
+			if err != nil {
+				return err
+			}
+			log.Println("created pod:", p.Name)
+			if watch {
+				return k8s.watch(ctx, p)
+			}
+			return nil
 		},
 	}
 	pod.Flags().StringVarP(&dir, "dir", "d", ".", "directory to search for melange configs")

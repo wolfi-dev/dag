@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -299,7 +300,20 @@ func (g Graph) SubgraphWithLeaves(leaves []string) (*Graph, error) {
 }
 
 // MakeTarget creates the make target for the given package in the Graph.
+//
+// Example: packages/aarch64/busybox-0.1.2-r3.apk
 func (g Graph) MakeTarget(pkgName, arch string) (string, error) {
+	p, err := g.Package(pkgName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("packages", arch, p), nil
+}
+
+// Package creates the package name for the given package in the Graph.
+//
+// Example: busybox-0.1.2-r3.apk
+func (g Graph) Package(pkgName string) (string, error) {
 	config := g.Config(pkgName)
 	if config == nil {
 		return "", fmt.Errorf("unable to generate target: no config for package %q", pkgName)
@@ -308,7 +322,7 @@ func (g Graph) MakeTarget(pkgName, arch string) (string, error) {
 	p := config.Package
 
 	// note: using pkgName here because it may be a subpackage, not the main package declared within the config (i.e. `p.Name`)
-	return fmt.Sprintf("packages/%s/%s-%s-r%s.apk", arch, pkgName, p.Version, p.Epoch), nil
+	return fmt.Sprintf("%s-%s-r%s.apk", pkgName, p.Version, p.Epoch), nil
 }
 
 // Nodes returns a slice of the names of all nodes in the Graph, sorted alphabetically.
