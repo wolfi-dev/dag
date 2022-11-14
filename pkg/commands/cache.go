@@ -23,7 +23,7 @@ import (
 )
 
 func cmdCache() *cobra.Command {
-	var dir, out, repo string
+	var dir, out, project, bundleRepo string
 	cache := &cobra.Command{
 		Use:   "cache",
 		Short: "Fetch and cache remote dependencies of a directory of packages",
@@ -31,6 +31,18 @@ func cmdCache() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			start := time.Now()
+
+			if bundleRepo == "" {
+				if project == "" {
+					var err error
+					project, err = gcloudProjectID(ctx)
+					if err != nil {
+						return fmt.Errorf("error detecting project ID: %w", err)
+					}
+					log.Println("Detected project is", project)
+				}
+				bundleRepo = fmt.Sprintf("gcr.io/%s/cache", project)
+			}
 
 			var cfgs []pkg.Config
 			if err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
@@ -142,9 +154,9 @@ func cmdCache() *cobra.Command {
 			}
 			log.Printf("Cached %d URIs (%s) in %s", count, humanize.Bytes(size), time.Since(start))
 
-			if repo != "" {
+			if bundleRepo != "" {
 				// Bundle the cache dir into an image.
-				t, err := name.NewTag(repo, name.WeakValidation)
+				t, err := name.NewTag(bundleRepo, name.WeakValidation)
 				if err != nil {
 					return err
 				}
@@ -159,7 +171,8 @@ func cmdCache() *cobra.Command {
 	}
 	cache.Flags().StringVarP(&dir, "dir", "d", ".", "directory to search for melange configs")
 	cache.Flags().StringVarP(&out, "out", "o", "./cache", "output directory")
-	cache.Flags().StringVar(&repo, "repo", "", "if set, OCI repository to push the bundle to")
+	cache.Flags().StringVar(&bundleRepo, "bundle-repo", "", "OCI repository to push the bundle to; if unset, gcr.io/$PROJECT/dag")
+	cache.Flags().StringVar(&project, "project", "", "GCP project; if unset, detects project configured by gcloud")
 	return cache
 }
 

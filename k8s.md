@@ -27,17 +27,17 @@ gcloud container clusters create tmp-cluster \
 
 ## Getting Started
 
-Run pod that executes `make all`:
+Run pod that executes `make all` on the current directory:
 
 ```
-dag pod --repo=$REPO
+dag pod
 ```
 
 This will create a Pod with a unique generated name to `make all`, watch it until it starts, and tail logs.
 
 If Pod creation or initialization fails, or if the build running in the Pod fails, the command fails.
 
-You can specify a subset of packages to build as positional args, e.g., `dag pod ... brotli git-lfs`
+You can specify a subset of packages to build as positional args, e.g., `dag pod brotli git-lfs`
 
 You can pass `--watch=false` to only create the Pod and not watch it.
 You can pass `--create=false` to print the Pod YAML but not create it.
@@ -84,6 +84,128 @@ Now when you run the Pod, it can interact with GCS with the GSA's permissions.
 
 You can change the KSA name with the `--service-account` flag -- if you do this, or change `--namespace`, make sure you bind the GSA to the correct KSA, and annotate the KSA!
 
+### Signing Secret (GKE)
+
+This depends on [Workload Identity](#workload-identity-gke)
+
+First, put the signing key you want to use (or already have one) in Secret Manager, named `melange-signing-key`:
+
+```
+gcloud secrets create melange-signing-key --replication-policy=automatic
+gcloud secrets versions add melange-signing-key --data-file="melange.rsa"
+```
+
+Grant the GSA you created above access to use the secret:
+
+```
+gcloud secrets add-iam-policy-binding melange-signing-key \
+    --member=serviceAccount:build-cluster@${PROJECT}.iam.gserviceaccount.com \
+    --role=roles/secretmanager.secretAccessor
+```
+
+Next, install the [K8s Secrets Store CSI driver](https://secrets-store-csi-driver.sigs.k8s.io/):
+
+```
+CSI_DRIVER_VERSION=v1.2.4
+kubectl apply \
+  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/rbac-secretproviderclass.yaml" \
+  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/csidriver.yaml" \
+  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml" \
+  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml" \
+  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store-csi-driver.yaml"
+
+```
+
+...and the [GCP plugin for it](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp):
+
+```
+GCP_PLUGIN_VERSION=v1.1.0
+kubectl apply -f "https://raw.githubusercontent.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp/${GCP_PLUGIN_VERSION}/deploy/provider-gcp-plugin.yaml"
+```
+
+> **NOTE:** If you want to run Arm builds, [until the GCP provider supports Arm](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp/issues/191), you need to use a custom image built to support multi-arch.
+
+<details>
+<summary>Support GCP Secret Manager on GKE Arm nodes</summary>
+
+**⚠️ Arm support for the secret store CSI driver is currently broken and being investigated.**
+
+Use a pre-built public multi-platform image:
+
+```
+kubectl patch daemonset csi-secrets-store-provider-gcp \
+  -n kube-system \
+  --patch-file=arm-patch.yaml
+```
+
+Or build your own image:
+
+```
+git clone https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp
+cd secrets-store-csi-driver-provider-gcp
+echo "defaultBaseImage: gcr.io/distroless/static-debian11" > .ko.yaml
+export KO_DOCKER_REPO=gcr.io/$(gcloud config get-value project)
+ko build --platform=linux/amd64,linux/arm64 --preserve-import-paths
+```
+
+...and update `arm-patch.yaml` to use the resulting image as above.
+</details>
+
+Configure the secret in the GCP provider:
+
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: melange-key
+spec:
+  provider: gcp
+  parameters:
+    secrets: |
+      - resourceName: "projects/${PROJECT}/secrets/melange-signing-key/versions/latest"
+        path: "melange.rsa"
+EOF
+```
+
+And test that the secret is available:
+
+```
+cat <<EOF | kubectl create -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  generateName: secret-test-
+spec:
+  serviceAccountName: default
+  restartPolicy: Never
+  containers:
+  - image: cgr.dev/chainguard/busybox
+    name: test
+    command: ['ls', '/var/secrets/melange.rsa']
+    volumeMounts:
+      - mountPath: "/var/secrets"
+        name: melange-key
+  volumes:
+  - name: melange-key
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: "melange-key"
+EOF
+```
+
+```
+$ kubectl get pods
+NAME                READY   STATUS              RESTARTS   AGE
+secret-test-k6pnm   0/1     Completed           0          8s
+```
+
+If it didn't complete successfully, `kubectl describe` it to troubleshoot.
+
+With all that set up, you can now run `dag pod --secret-key`, which will fetch and mount the `melange.rsa` secret and use it during the build.
+
 ## Arm Nodes (GKE)
 
 - https://cloud.google.com/kubernetes-engine/docs/how-to/prepare-arm-workloads-for-deployment
@@ -107,7 +229,7 @@ Delete this node pool when you don't use it.)
 Then request an arm64 build and see logs:
 
 ```
-dag pod --repo=$REPO --arch=arm64
+dag pod --arch=arm64
 ```
 
 Cleanup the cluster:
@@ -140,6 +262,6 @@ dag cache
 
 This will pull and verify all the URLs, and put them in `./cache`.
 
-You can also pass `--repo` to push a bundle image containing the pre-cached dependencies.
+You can also pass `--bundle-repo` to push a bundle image containing the pre-cached dependencies.
 
 You can pass this to a build, with `--cache-bundle`, which will pull the image and pre-populate `/var/cache/melange` in the build context with your cached dependencies.
