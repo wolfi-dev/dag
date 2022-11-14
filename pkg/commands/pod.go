@@ -1,21 +1,22 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/wolfi-dev/dag/pkg"
-
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mattmoor/mink/pkg/bundles/kontext"
 	"github.com/spf13/cobra"
+	"github.com/wolfi-dev/dag/pkg"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,9 +27,18 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+func gcloudProjectID(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "gcloud", "config", "get-value", "project")
+	b, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.TrimSuffix(b, []byte{'\n'})), nil // Trim trailing newline.
+}
+
 func cmdPod() *cobra.Command {
-	var dir, arch, repo, ns, cpu, ram, sa, sdkimg, cachedig string
-	var create, watch bool
+	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig string
+	var create, watch, secretKey, cp bool
 	var pendingTimeout time.Duration
 	pod := &cobra.Command{
 		Use:   "pod",
@@ -39,6 +49,19 @@ func cmdPod() *cobra.Command {
 
 			if arch == "arm64" {
 				arch = "aarch64"
+			}
+
+			if (bundleRepo == "" || secretKey) && project == "" {
+				var err error
+				project, err = gcloudProjectID(ctx)
+				if err != nil {
+					return fmt.Errorf("error detecting project ID: %w", err)
+				}
+				log.Println("Detected project is", project)
+			}
+			if bundleRepo == "" {
+				bundleRepo = fmt.Sprintf("gcr.io/%s/dag", project)
+				log.Println("Bundle repo is", bundleRepo)
 			}
 
 			targets := []string{"all"}
@@ -65,7 +88,7 @@ func cmdPod() *cobra.Command {
 			}
 
 			// Bundle the source context into an image.
-			t, err := name.NewTag(repo, name.WeakValidation)
+			t, err := name.NewTag(bundleRepo, name.WeakValidation)
 			if err != nil {
 				return err
 			}
@@ -123,8 +146,17 @@ func cmdPod() *cobra.Command {
 							fmt.Sprintf(`
 set -euo pipefail
 ls /var/cache/melange
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make local-melange.rsa
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(targets, " ")),
+if [[ ! -f /var/secrets/melange.rsa ]]; then
+  echo "Generating key..."
+  MELANGE=/usr/bin/melange KEY=melange.rsa make melange.rsa
+else
+  echo "Using secret key..."
+  cp /var/secrets/melange.rsa melange.rsa
+fi
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make %s
+rm melange.rsa
+echo exiting...
+exit 0`, strings.Join(targets, " ")),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -162,6 +194,38 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 				})
 			}
 
+			if cp {
+				p.Spec.Containers = append(p.Spec.Containers, corev1.Container{
+					Name:    "block-to-copy",
+					Image:   "cgr.dev/chainguard/busybox",  // TODO: make this configurable?
+					Command: []string{"sleep", "infinity"}, // TODO: time out eventually?
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "workspace",
+						MountPath: "/workspace",
+					}},
+				})
+			}
+
+			if secretKey {
+				// TODO: Make sure the SecretProviderClass exists.
+				p.Spec.Containers[0].VolumeMounts = append(p.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+					Name:      "melange-key",
+					MountPath: "/var/secrets",
+				})
+				p.Spec.Volumes = append(p.Spec.Volumes, corev1.Volume{
+					Name: "melange-key",
+					VolumeSource: corev1.VolumeSource{
+						CSI: &corev1.CSIVolumeSource{
+							Driver:   "secrets-store.csi.k8s.io",
+							ReadOnly: pointer.Bool(true),
+							VolumeAttributes: map[string]string{
+								"secretProviderClass": "melange-key",
+							},
+						},
+					},
+				})
+			}
+
 			if arch == "aarch64" {
 				p.Spec.NodeSelector = map[string]string{
 					//"cloud.google.com/compute-class": "Scale-Out", TODO(jason): Needed for GKE Autopilot.
@@ -180,7 +244,7 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 				}
 				log.Println("created pod:", p.Name)
 				if watch {
-					return k8s.watch(ctx, p)
+					return k8s.watch(ctx, p, cp)
 				}
 				return nil
 			}
@@ -190,7 +254,8 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 	}
 	pod.Flags().StringVarP(&dir, "dir", "d", ".", "directory to search for melange configs")
 	pod.Flags().StringVarP(&arch, "arch", "a", "x86_64", "architecture to build for")
-	pod.Flags().StringVar(&repo, "repo", "", "OCI repository to push the bundle to")
+	pod.Flags().StringVar(&bundleRepo, "bundle-repo", "", "OCI repository to push the bundle to; if unset, gcr.io/$PROJECT/dag")
+	pod.Flags().StringVar(&project, "project", "", "GCP project; if unset, detects project configured by gcloud")
 	pod.Flags().StringVarP(&ns, "namespace", "n", "default", "namespace to create the pod in")
 	pod.Flags().StringVar(&cpu, "cpu", "1", "CPU request")
 	pod.Flags().StringVar(&ram, "ram", "2Gi", "RAM request")
@@ -198,8 +263,10 @@ MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange make %s`, strings.Join(t
 	pod.Flags().BoolVar(&create, "create", true, "create the pod")
 	pod.Flags().BoolVarP(&watch, "watch", "w", true, "watch the pod, stream logs")
 	pod.Flags().StringVar(&sdkimg, "sdk-image", "cgr.dev/chainguard/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
-	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", time.Minute, "timeout for the pod to start")
+	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", 5*time.Minute, "timeout for the pod to start")
 	pod.Flags().StringVar(&cachedig, "cache-bundle", "", "if set, cache bundle reference by digest")
+	pod.Flags().BoolVar(&cp, "copy", true, "if true, add a container that blocks so files can be copied out.")
+	pod.Flags().BoolVar(&secretKey, "secret-key", false, "if true, bind a GCP secret named `melange-signing-key` into /var/secrets/melange.rsa (requires GKE and Workload Identity)")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
@@ -232,7 +299,7 @@ func (k *k8s) create(ctx context.Context, p *corev1.Pod) (*corev1.Pod, error) {
 	return k.clientset.CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
 }
 
-func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
+func (k *k8s) watch(ctx context.Context, p *corev1.Pod, cp bool) error {
 	c := make(chan os.Signal, 2)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -308,12 +375,34 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 						return
 					}
 					defer rc.Close()
-					if _, err := io.Copy(os.Stdout, rc); err != nil {
-						errCh <- err
-						return
-					}
+					_, err = io.Copy(os.Stdout, rc)
+					errCh <- err
+					return
 				}()
-				return <-errCh
+				if err := <-errCh; err != nil {
+					return err
+				}
+
+				log.Println("log streaming done")
+			L:
+				for {
+					p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+					if err != nil {
+						return err
+					}
+
+					if p.Status.ContainerStatuses[0].State.Terminated != nil {
+						log.Println("build container not yet finished:", p.Status.ContainerStatuses[0])
+						time.Sleep(10 * time.Second)
+					} else {
+						log.Println("build container done!")
+						log.Println("Run:")
+						log.Printf("  kubectl cp %s:/workspace/packages packages/ -c block-to-copy", p.Name)
+						log.Println("Then:")
+						log.Printf("  kubectl exec %s -c block-to-copy exit 0", p.Name)
+						break L
+					}
+				}
 			case corev1.PodSucceeded:
 				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time))
 				return nil
