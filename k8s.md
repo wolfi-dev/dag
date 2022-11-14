@@ -82,6 +82,16 @@ kubectl annotate serviceaccount default \
 
 Now when you run the Pod, it can interact with GCS with the GSA's permissions.
 
+To grant the GSA permission to write to a bucket:
+
+```
+gsutil iam ch \
+  serviceAccount:build-cluster@${PROJECT}.iam.gserviceaccount.com:objectCreator \
+  gs://${BUCKET}
+```
+
+Then you can run `dag pod` with `--bucket=${BUCKET}`.
+
 You can change the KSA name with the `--service-account` flag -- if you do this, or change `--namespace`, make sure you bind the GSA to the correct KSA, and annotate the KSA!
 
 ### Signing Secret (GKE)
@@ -135,7 +145,7 @@ Use a pre-built public multi-platform image:
 ```
 kubectl patch daemonset csi-secrets-store-provider-gcp \
   -n kube-system \
-  --patch-file=arm-patch.yaml
+  --patch-file=arm-patch-1.yaml
 ```
 
 Or build your own image:
@@ -149,6 +159,14 @@ ko build --platform=linux/amd64,linux/arm64 --preserve-import-paths
 ```
 
 ...and update `arm-patch.yaml` to use the resulting image as above.
+
+Then patch the K8s CSI daemonset to tolerate Arm nodes:
+
+```
+kubectl patch daemonset csi-secrets-store \
+  -n kube-system \
+  --patch-file=arm-patch-2.yaml
+```
 </details>
 
 Configure the secret in the GCP provider:
@@ -180,7 +198,7 @@ spec:
   serviceAccountName: default
   restartPolicy: Never
   containers:
-  - image: cgr.dev/chainguard/busybox
+  - image: busybox
     name: test
     command: ['ls', '/var/secrets/melange.rsa']
     volumeMounts:
