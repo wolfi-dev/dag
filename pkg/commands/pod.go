@@ -13,10 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"chainguard.dev/apko/pkg/build/types"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mattmoor/mink/pkg/bundles/kontext"
 	"github.com/spf13/cobra"
 	"github.com/wolfi-dev/dag/pkg"
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,8 +39,8 @@ func gcloudProjectID(ctx context.Context) (string, error) {
 }
 
 func cmdPod() *cobra.Command {
-	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig string
-	var create, watch, secretKey, cp bool
+	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket string
+	var create, watch, secretKey bool
 	var pendingTimeout time.Duration
 	pod := &cobra.Command{
 		Use:   "pod",
@@ -47,9 +49,7 @@ func cmdPod() *cobra.Command {
 			// Don't use cmd.Context() since we want to capture signals to kill the pod.
 			ctx := context.Background()
 
-			if arch == "arm64" {
-				arch = "aarch64"
-			}
+			arch := types.ParseArchitecture(arch).ToAPK()
 
 			if (bundleRepo == "" || secretKey) && project == "" {
 				var err error
@@ -155,6 +155,7 @@ else
 fi
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make %s
 rm melange.rsa
+touch start-gsutil-cp
 echo exiting...
 exit 0`, strings.Join(targets, " ")),
 						},
@@ -194,11 +195,21 @@ exit 0`, strings.Join(targets, " ")),
 				})
 			}
 
-			if cp {
+			if bucket != "" {
 				p.Spec.Containers = append(p.Spec.Containers, corev1.Container{
-					Name:    "block-to-copy",
-					Image:   "cgr.dev/chainguard/busybox",  // TODO: make this configurable?
-					Command: []string{"sleep", "infinity"}, // TODO: time out eventually?
+					Name:       "gsutil-cp",
+					Image:      "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim", // TODO: make this configurable?
+					WorkingDir: "/workspace",
+					Command: []string{"sh", "-c", fmt.Sprintf(`
+#!/usr/bin/env bash
+interval=10
+while true;
+do
+  [ -f start-gsutil-cp ] && break
+  sleep 10
+done
+gsutil cp -m -r ./packages gs://%s/packages`, bucket),
+					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "workspace",
 						MountPath: "/workspace",
@@ -234,7 +245,7 @@ exit 0`, strings.Join(targets, " ")),
 			}
 
 			if create {
-				k8s, err := newK8s(pendingTimeout)
+				k8s, err := newK8s(pendingTimeout, bucket)
 				if err != nil {
 					return err
 				}
@@ -244,7 +255,7 @@ exit 0`, strings.Join(targets, " ")),
 				}
 				log.Println("created pod:", p.Name)
 				if watch {
-					return k8s.watch(ctx, p, cp)
+					return k8s.watch(ctx, p)
 				}
 				return nil
 			}
@@ -265,8 +276,8 @@ exit 0`, strings.Join(targets, " ")),
 	pod.Flags().StringVar(&sdkimg, "sdk-image", "cgr.dev/chainguard/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
 	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", 5*time.Minute, "timeout for the pod to start")
 	pod.Flags().StringVar(&cachedig, "cache-bundle", "", "if set, cache bundle reference by digest")
-	pod.Flags().BoolVar(&cp, "copy", true, "if true, add a container that blocks so files can be copied out.")
 	pod.Flags().BoolVar(&secretKey, "secret-key", false, "if true, bind a GCP secret named `melange-signing-key` into /var/secrets/melange.rsa (requires GKE and Workload Identity)")
+	pod.Flags().StringVar(&bucket, "bucket", "", "if set, upload contents of packages/* to a location in GCS")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
@@ -275,9 +286,10 @@ type k8s struct {
 	clientset      kubernetes.Clientset
 	pendingTimeout time.Duration
 	started        bool
+	bucket         string
 }
 
-func newK8s(pendingTimeout time.Duration) (*k8s, error) {
+func newK8s(pendingTimeout time.Duration, bucket string) (*k8s, error) {
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
 		&clientcmd.ConfigOverrides{},
@@ -292,6 +304,7 @@ func newK8s(pendingTimeout time.Duration) (*k8s, error) {
 	return &k8s{
 		clientset:      *clientset,
 		pendingTimeout: pendingTimeout,
+		bucket:         bucket,
 	}, nil
 }
 
@@ -299,7 +312,7 @@ func (k *k8s) create(ctx context.Context, p *corev1.Pod) (*corev1.Pod, error) {
 	return k.clientset.CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
 }
 
-func (k *k8s) watch(ctx context.Context, p *corev1.Pod, cp bool) error {
+func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 	c := make(chan os.Signal, 2)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -363,46 +376,34 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod, cp bool) error {
 				k.started = true
 
 				// Start streaming logs.
-				errCh := make(chan error)
-				go func() {
-					defer close(errCh)
-					rc, err := k.clientset.CoreV1().Pods(p.Namespace).GetLogs(p.Name, &corev1.PodLogOptions{
-						Container: "build",
-						Follow:    true,
-					}).Stream(ctx)
-					if err != nil {
-						errCh <- err
-						return
+				var errg errgroup.Group
+				stream := func(container string) func() error {
+					return func() error {
+						rc, err := k.clientset.CoreV1().Pods(p.Namespace).GetLogs(p.Name, &corev1.PodLogOptions{
+							Container: container,
+							Follow:    true,
+						}).Stream(ctx)
+						if err != nil {
+							return err
+						}
+						defer rc.Close()
+						_, err = io.Copy(os.Stdout, rc)
+						return err
 					}
-					defer rc.Close()
-					_, err = io.Copy(os.Stdout, rc)
-					errCh <- err
-					return
-				}()
-				if err := <-errCh; err != nil {
+				}
+				errg.Go(stream("build"))
+				if k.bucket != "" {
+					errg.Go(stream("gsutil-cp"))
+				}
+				if err := errg.Wait(); err != nil {
 					return err
 				}
 
 				log.Println("log streaming done")
-			L:
-				for {
-					p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
-					if err != nil {
-						return err
-					}
 
-					if p.Status.ContainerStatuses[0].State.Terminated != nil {
-						log.Println("build container not yet finished:", p.Status.ContainerStatuses[0])
-						time.Sleep(10 * time.Second)
-					} else {
-						log.Println("build container done!")
-						log.Println("Run:")
-						log.Printf("  kubectl cp %s:/workspace/packages packages/ -c block-to-copy", p.Name)
-						log.Println("Then:")
-						log.Printf("  kubectl exec %s -c block-to-copy exit 0", p.Name)
-						break L
-					}
-				}
+				// TODO(jason): Print some useful summary of timing/cost and link to logs.
+
+				return nil
 			case corev1.PodSucceeded:
 				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time))
 				return nil
