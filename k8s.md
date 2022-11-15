@@ -76,7 +76,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 Annotate the KSA to tell it which GSA it's bound to.
 
 ```
-kubectl annotate serviceaccount default \
+kubectl annotate serviceaccount default --overwrite \
     "iam.gke.io/gcp-service-account=build-cluster@${PROJECT}.iam.gserviceaccount.com"
 ```
 
@@ -94,7 +94,7 @@ Then you can run `dag pod` with `--bucket=${BUCKET}`.
 
 You can change the KSA name with the `--service-account` flag -- if you do this, or change `--namespace`, make sure you bind the GSA to the correct KSA, and annotate the KSA!
 
-### Signing Secret (GKE)
+## Signing Secret (GKE)
 
 This depends on [Workload Identity](#workload-identity-gke)
 
@@ -113,80 +113,16 @@ gcloud secrets add-iam-policy-binding melange-signing-key \
     --role=roles/secretmanager.secretAccessor
 ```
 
-Next, install the [K8s Secrets Store CSI driver](https://secrets-store-csi-driver.sigs.k8s.io/):
+Then run `./scripts/setup-cluster.sh`.
+This will:
 
-```
-CSI_DRIVER_VERSION=v1.2.4
-kubectl apply \
-  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/rbac-secretproviderclass.yaml" \
-  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/csidriver.yaml" \
-  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml" \
-  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store.csi.x-k8s.io_secretproviderclasspodstatuses.yaml" \
-  -f "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/${CSI_DRIVER_VERSION}/deploy/secrets-store-csi-driver.yaml"
+1. ensure the KSA is annotated with the GSA's ID
+1. install the [K8s Secrets Store CSI driver](https://secrets-store-csi-driver.sigs.k8s.io/)
+1. install the [GCP plugin for the K8s Secret Store CSI driver](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp)
+1. apply the necessary patches so these DaemonSets tolerate Arm nodes 
+1. configure the `melange-signing-key` secret in the Secret Store CSI driver
 
-```
-
-...and the [GCP plugin for it](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp):
-
-```
-GCP_PLUGIN_VERSION=v1.1.0
-kubectl apply -f "https://raw.githubusercontent.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp/${GCP_PLUGIN_VERSION}/deploy/provider-gcp-plugin.yaml"
-```
-
-> **NOTE:** If you want to run Arm builds, [until the GCP provider supports Arm](https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp/issues/191), you need to use a custom image built to support multi-arch.
-
-<details>
-<summary>Support GCP Secret Manager on GKE Arm nodes</summary>
-
-**⚠️ Arm support for the secret store CSI driver is currently broken and being investigated.**
-
-Use a pre-built public multi-platform image:
-
-```
-kubectl patch daemonset csi-secrets-store-provider-gcp \
-  -n kube-system \
-  --patch-file=arm-patch-1.yaml
-```
-
-Or build your own image:
-
-```
-git clone https://github.com/GoogleCloudPlatform/secrets-store-csi-driver-provider-gcp
-cd secrets-store-csi-driver-provider-gcp
-echo "defaultBaseImage: gcr.io/distroless/static-debian11" > .ko.yaml
-export KO_DOCKER_REPO=gcr.io/$(gcloud config get-value project)
-ko build --platform=linux/amd64,linux/arm64 --preserve-import-paths
-```
-
-...and update `arm-patch.yaml` to use the resulting image as above.
-
-Then patch the K8s CSI daemonset to tolerate Arm nodes:
-
-```
-kubectl patch daemonset csi-secrets-store \
-  -n kube-system \
-  --patch-file=arm-patch-2.yaml
-```
-</details>
-
-Configure the secret in the GCP provider:
-
-```
-cat <<EOF | kubectl apply -f -
-apiVersion: secrets-store.csi.x-k8s.io/v1
-kind: SecretProviderClass
-metadata:
-  name: melange-key
-spec:
-  provider: gcp
-  parameters:
-    secrets: |
-      - resourceName: "projects/${PROJECT}/secrets/melange-signing-key/versions/latest"
-        path: "melange.rsa"
-EOF
-```
-
-And test that the secret is available:
+After this, you can test that the secret is available:
 
 ```
 cat <<EOF | kubectl create -f -
