@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"chainguard.dev/apko/pkg/build/types"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mattmoor/mink/pkg/bundles/kontext"
 	"github.com/spf13/cobra"
@@ -48,9 +49,7 @@ func cmdPod() *cobra.Command {
 			// Don't use cmd.Context() since we want to capture signals to kill the pod.
 			ctx := context.Background()
 
-			if arch == "arm64" {
-				arch = "aarch64"
-			}
+			arch := types.ParseArchitecture(arch).ToAPK()
 
 			if (bundleRepo == "" || secretKey) && project == "" {
 				var err error
@@ -209,7 +208,7 @@ do
   [ -f start-gsutil-cp ] && break
   sleep 10
 done
-gsutil cp ./packages gs://%s/packages`, bucket),
+gsutil cp -m -r ./packages gs://%s/packages`, bucket),
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "workspace",
@@ -401,25 +400,10 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				}
 
 				log.Println("log streaming done")
-			L:
-				for {
-					p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
-					if err != nil {
-						return err
-					}
 
-					if p.Status.ContainerStatuses[0].State.Terminated != nil {
-						log.Println("build container not yet finished:", p.Status.ContainerStatuses[0])
-						time.Sleep(10 * time.Second)
-					} else {
-						log.Println("build container done!")
-						log.Println("Run:")
-						log.Printf("  kubectl cp %s:/workspace/packages packages/ -c block-to-copy", p.Name)
-						log.Println("Then:")
-						log.Printf("  kubectl exec %s -c block-to-copy exit 0", p.Name)
-						break L
-					}
-				}
+				// TODO(jason): Print some useful summary of timing/cost and link to logs.
+
+				return nil
 			case corev1.PodSucceeded:
 				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time))
 				return nil
