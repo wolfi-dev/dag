@@ -32,6 +32,10 @@ kubectl patch daemonset csi-secrets-store \
   -n kube-system \
   --patch-file=arm-patch-2.yaml
 
+# Wait for DaemonSets to become ready.
+kubectl rollout status daemonset -n kube-system csi-secrets-store
+kubectl rollout status daemonset -n kube-system csi-secrets-store-provider-gcp
+
 # Bind the melange signing key GCP secret to the secrets store CSI driver.
 cat <<EOF | kubectl apply -f -
 apiVersion: secrets-store.csi.x-k8s.io/v1
