@@ -2,9 +2,14 @@
 
 set -euo pipefail
 
+if [ $# -lt 1 ]; then
+  echo "Must specify service account name"
+fi
+SA=${1}
+
 # Bind the default KSA to the build GSA
 kubectl annotate serviceaccount default --overwrite \
-  "iam.gke.io/gcp-service-account=build-cluster@${PROJECT}.iam.gserviceaccount.com"
+  "iam.gke.io/gcp-service-account=${SA}@${PROJECT}.iam.gserviceaccount.com"
 
 # Install the secrets store CSI driver.
 CSI_DRIVER_VERSION=v1.2.4

@@ -50,7 +50,7 @@ Use `--namespace` (`-n`) to change this.
 - https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity
 
 
-Create a Google Service Account (GSA)
+Create a Google Service Account (GSA) -- in this example, we'll call the SA `build-cluster`.
 
 ```
 gcloud iam service-accounts create build-cluster
@@ -113,7 +113,8 @@ gcloud secrets add-iam-policy-binding melange-signing-key \
     --role=roles/secretmanager.secretAccessor
 ```
 
-Then run `./scripts/setup-cluster.sh`.
+Then run `./scripts/setup-cluster.sh build-cluster`.
+
 This will:
 
 1. ensure the KSA is annotated with the GSA's ID
