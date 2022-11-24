@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
+	"text/template"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -65,27 +67,38 @@ func cmdPod() *cobra.Command {
 			}
 
 			targets := []string{"all"}
+			deps := map[string]struct{}{}
 			if len(args) > 0 {
 				g, err := pkg.NewGraph(os.DirFS(dir))
 				if err != nil {
 					return err
 				}
 
-				subgraph, err := g.SubgraphWithRoots(args)
-				if err != nil {
-					return err
-				}
-
-				targets = nil
-				for _, node := range subgraph.Nodes() {
-					t, err := g.MakeTarget(node, arch)
+				targets = make([]string, 0, len(args))
+				for _, arg := range args {
+					t, err := g.MakeTarget(arg, arch)
 					if err != nil {
 						return err
 					}
-
 					targets = append(targets, t)
 				}
+
+				for _, arg := range args {
+					for _, d := range g.DependenciesOf(arg) {
+						d, err = g.MakeTarget(d, arch)
+						if err != nil {
+							return err
+						}
+						deps[strings.TrimPrefix(d, "packages/")] = struct{}{}
+					}
+				}
+
 			}
+			depsList := make([]string, 0, len(deps))
+			for k := range deps {
+				depsList = append(depsList, k)
+			}
+			sort.Strings(depsList)
 
 			// Bundle the source context into an image.
 			t, err := name.NewTag(bundleRepo, name.WeakValidation)
@@ -97,6 +110,47 @@ func cmdPod() *cobra.Command {
 				return err
 			}
 			log.Println("bundled source context to", dig)
+
+			var buf bytes.Buffer
+			if err := template.Must(template.New("").
+				Funcs(template.FuncMap{"StringsJoin": strings.Join}).
+				Parse(`
+set -euo pipefail
+
+# Use or generate secret.
+if [[ ! -f /var/secrets/melange.rsa ]]; then
+  echo "Generating key..."
+  MELANGE=/usr/bin/melange KEY=melange.rsa make melange.rsa
+else
+  echo "Using secret key..."
+  cp /var/secrets/melange.rsa melange.rsa
+fi
+
+# Prepopulate dependencies.
+for d in {{ StringsJoin .Deps " "}}; do
+  wget -P packages/{{.Arch}}/ "https://packages.wolfi.dev/os/${d}"
+done
+wget -O melange.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+ls -R /workspace/packages
+
+# Build targets.
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make {{ StringsJoin .Targets " "}}
+rm melange.rsa
+
+# Trigger gsutil upload step.
+touch start-gsutil-cp
+echo exiting...
+exit 0
+`)).Execute(&buf, struct {
+				Deps, Targets []string
+				Arch          string
+			}{
+				Deps:    depsList,
+				Targets: targets,
+				Arch:    arch,
+			}); err != nil {
+				return err
+			}
 
 			p := &corev1.Pod{
 				TypeMeta: metav1.TypeMeta{
@@ -143,21 +197,7 @@ func cmdPod() *cobra.Command {
 						},
 						Command: []string{
 							"sh", "-c",
-							fmt.Sprintf(`
-set -euo pipefail
-ls /var/cache/melange
-if [[ ! -f /var/secrets/melange.rsa ]]; then
-  echo "Generating key..."
-  MELANGE=/usr/bin/melange KEY=melange.rsa make melange.rsa
-else
-  echo "Using secret key..."
-  cp /var/secrets/melange.rsa melange.rsa
-fi
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make %s
-rm melange.rsa
-touch start-gsutil-cp
-echo exiting...
-exit 0`, strings.Join(targets, " ")),
+							buf.String(),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
