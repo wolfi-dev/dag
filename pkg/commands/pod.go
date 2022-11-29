@@ -40,6 +40,11 @@ func gcloudProjectID(ctx context.Context) (string, error) {
 	return string(bytes.TrimSuffix(b, []byte{'\n'})), nil // Trim trailing newline.
 }
 
+var realBuckets = map[string]bool{
+	"wolfi-production-registry-source": true,
+	"wolfi-registry-source":            true, // staging
+}
+
 func cmdPod() *cobra.Command {
 	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket string
 	var create, watch, secretKey bool
@@ -66,14 +71,32 @@ func cmdPod() *cobra.Command {
 				log.Println("Bundle repo is", bundleRepo)
 			}
 
-			targets := []string{"all"}
+			for b := range realBuckets {
+				if strings.HasPrefix(bucket, b) && !secretKey {
+					return fmt.Errorf("cowardly refusing to push to real bucket %s without secret key", bucket)
+				}
+			}
+
+			g, err := pkg.NewGraph(os.DirFS(dir))
+			if err != nil {
+				return err
+			}
+
+			var targets []string
 			deps := map[string]struct{}{}
-			if len(args) > 0 {
-				g, err := pkg.NewGraph(os.DirFS(dir))
+			if len(args) == 0 {
+				nodes, err := g.Sorted()
 				if err != nil {
 					return err
 				}
-
+				for _, n := range nodes {
+					t, err := g.MakeTarget(n, arch)
+					if err != nil {
+						return fmt.Errorf("failed to make target for %s: %v", n, err)
+					}
+					targets = append(targets, t)
+				}
+			} else {
 				targets = make([]string, 0, len(args))
 				for _, arg := range args {
 					t, err := g.MakeTarget(arg, arch)
@@ -112,9 +135,7 @@ func cmdPod() *cobra.Command {
 			log.Println("bundled source context to", dig)
 
 			var buf bytes.Buffer
-			if err := template.Must(template.New("").
-				Funcs(template.FuncMap{"StringsJoin": strings.Join}).
-				Parse(`
+			if err := template.Must(template.New("").Parse(`
 set -euo pipefail
 
 # Use or generate secret.
@@ -127,15 +148,17 @@ else
 fi
 
 # Prepopulate dependencies.
-for d in {{ StringsJoin .Deps " "}}; do
-  wget -P packages/{{.Arch}}/ "https://packages.wolfi.dev/os/${d}"
-done
-wget -O melange.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+mkdir -p /workspace/packages/{{.Arch}}/
+{{ range .Deps }}wget -P /workspace/packages/{{$.Arch}} https://packages.wolfi.dev/os/{{.}}
+{{ end }}
+wget -P /workspace/packages/ https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+wget -P /workspace/packages/{{.Arch}}/ https://packages.wolfi.dev/os/{{.Arch}}/APKINDEX.tar.gz
+
 ls -R /workspace/packages
 
 # Build targets.
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make {{ StringsJoin .Targets " "}}
-rm melange.rsa
+{{ range .Targets }}MELANGE=/usr/bin/melange KEY=melange.rsa make {{ . }}
+{{ end }}rm melange.rsa
 
 # Trigger gsutil upload step.
 touch start-gsutil-cp

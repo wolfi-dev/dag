@@ -138,6 +138,28 @@ func decodeMelangeYAML(f fs.File) (Config, error) {
 		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
 	}
 
+	// Hydrate subpackages that use a range.
+	var updated []Subpackage
+	for _, sp := range c.Subpackages {
+		if sp.Range == "" {
+			updated = append(updated, Subpackage{Name: sp.Name})
+		} else {
+			for _, d := range c.Data {
+				if d.Name == sp.Range {
+					for k, v := range d.Items {
+						n := d.Name
+						n = strings.ReplaceAll(n, "${{range.key}}", k)
+						n = strings.ReplaceAll(n, "${{range.value}}", v)
+						updated = append(updated, Subpackage{Name: n})
+					}
+					break
+				}
+			}
+		}
+	}
+	sort.Slice(updated, func(i, j int) bool { return updated[i].Name < updated[j].Name })
+	c.Subpackages = updated
+
 	return c, nil
 }
 

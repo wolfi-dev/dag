@@ -1,5 +1,6 @@
 package pkg
 
+// TODO: reuse melange's pkg/build.Configuration type
 type Config struct {
 	Package struct {
 		Name    string `yaml:"name"`
@@ -15,9 +16,15 @@ type Config struct {
 		Uses string
 		With map[string]string
 	}
-	Subpackages []struct {
-		Name string
+	Data []struct {
+		Name  string
+		Items map[string]string
 	}
+	Subpackages []Subpackage
+}
+
+type Subpackage struct {
+	Name, Range string
 }
 
 type URI struct {
