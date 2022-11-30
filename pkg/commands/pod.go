@@ -209,9 +209,9 @@ interval=10
 while true;
 do
   [ -f start-gsutil-cp ] && break
-  sleep 10
+  sleep $interval
 done
-gsutil cp -m -r ./packages gs://%s/packages`, bucket),
+gsutil -m cp -r ./packages gs://%s/packages`, bucket),
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "workspace",
