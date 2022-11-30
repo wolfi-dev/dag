@@ -152,6 +152,9 @@ if [[ ! -f /var/secrets/melange.rsa ]]; then
 else
   echo "Using secret key..."
   cp /var/secrets/melange.rsa melange.rsa
+  wget -O melange.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  cat melange.rsa.pub
+  ls melange.rsa
 fi
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make %s
 rm melange.rsa
