@@ -211,7 +211,7 @@ do
   [ -f start-gsutil-cp ] && break
   sleep $interval
 done
-gsutil -m cp -r ./packages gs://%s/packages`, bucket),
+gsutil -m cp -r ./packages gs://%s`, bucket),
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "workspace",
