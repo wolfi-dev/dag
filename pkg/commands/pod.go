@@ -149,15 +149,17 @@ ls /var/cache/melange
 if [[ ! -f /var/secrets/melange.rsa ]]; then
   echo "Generating key..."
   MELANGE=/usr/bin/melange KEY=melange.rsa make melange.rsa
+  KEY=melange.rsa
 else
   echo "Using secret key..."
-  cp /var/secrets/melange.rsa melange.rsa
-  wget -O melange.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
-  cat melange.rsa.pub
-  ls melange.rsa
+  cp /var/secrets/melange.rsa wolfi-signing.rsa
+  wget -O wolfi-signing.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  KEY=wolfi-signing.rsa
+  cat wolfi-signing.rsa.pub
+  ls wolfi-signing.rsa
 fi
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=melange.rsa make %s
-rm melange.rsa
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} make %s
+rm ${KEY}
 touch start-gsutil-cp
 echo exiting...
 exit 0`, strings.Join(targets, " ")),
