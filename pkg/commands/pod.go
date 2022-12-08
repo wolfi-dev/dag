@@ -405,12 +405,8 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				}
 
 				log.Println("log streaming done")
-
-				// TODO(jason): Print some useful summary of timing/cost and link to logs.
-
-				return nil
 			case corev1.PodSucceeded:
-				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time))
+				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
 				return nil
 			case corev1.PodFailed:
 				log.Println("failed!")
