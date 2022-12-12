@@ -19,21 +19,3 @@ type Config struct {
 		Name string
 	}
 }
-
-type URI struct {
-	URI, ExpectedSHA256, ExpectedSHA512 string
-}
-
-func (c Config) URIs() []URI {
-	var uris []URI
-	for _, s := range c.Pipeline {
-		if s.Uses == "fetch" {
-			uris = append(uris, URI{
-				URI:            s.With["uri"],
-				ExpectedSHA256: s.With["expected-sha256"],
-				ExpectedSHA512: s.With["expected-sha512"],
-			})
-		}
-	}
-	return uris
-}
