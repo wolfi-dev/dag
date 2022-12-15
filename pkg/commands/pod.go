@@ -137,6 +137,9 @@ func cmdPod() *cobra.Command {
 						}, {
 							Name:      "cache",
 							MountPath: "/var/cache/melange",
+						}, {
+							Name:      "tmp",
+							MountPath: "/tmp",
 						}},
 						SecurityContext: &corev1.SecurityContext{
 							Privileged: pointer.Bool(true),
@@ -179,6 +182,11 @@ exit 0`, strings.Join(targets, " ")),
 						},
 					}, {
 						Name: "cache",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					}, {
+						Name: "tmp",
 						VolumeSource: corev1.VolumeSource{
 							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
