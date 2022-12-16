@@ -413,6 +413,17 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				}
 
 				log.Println("log streaming done")
+
+				// Check one more time after log streaming what the status of the pod was.
+				p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if p.Status.Phase == corev1.PodSucceeded {
+					return nil
+				}
+				return fmt.Errorf("after log streaming, pod phase was %s", p.Status.Phase)
+
 			case corev1.PodSucceeded:
 				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
 				return nil
