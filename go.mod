@@ -11,13 +11,11 @@ require (
 	chainguard.dev/apko v0.5.0
 	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/dominikbraun/graph v0.14.0
-	github.com/dustin/go-humanize v1.0.0
 	github.com/goccy/go-graphviz v0.0.9
 	github.com/google/go-containerregistry v0.12.0
 	github.com/mattmoor/mink v1.3.1
 	github.com/spf13/cobra v1.6.1
 	golang.org/x/sync v0.1.0
-	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.25.3
 	k8s.io/apimachinery v0.25.3
@@ -93,6 +91,7 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.70.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	knative.dev/pkg v0.0.0-20220316002959-3a4cc56708b9 // indirect

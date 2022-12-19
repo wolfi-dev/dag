@@ -29,6 +29,8 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+const gsutilImage = "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim" // TODO: make this configurable?
+
 func gcloudProjectID(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "gcloud", "config", "get-value", "project")
 	b, err := cmd.Output()
@@ -126,6 +128,30 @@ func cmdPod() *cobra.Command {
 								corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
 							},
 						},
+					}, {
+						Name:       "fetch-packages",
+						Image:      gsutilImage,
+						WorkingDir: "/workspace",
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "workspace",
+							MountPath: "/workspace",
+						}},
+						Command: []string{
+							"sh", "-c", `
+set -euo pipefail
+# Download all packages so we can avoid rebuilding them.
+mkdir -p ./packages/
+gsutil -m rsync -r gs://wolfi-production-registry-destination/os/ ./packages/
+find ./packages -print -exec touch \{} \;
+`},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								// Minimums required by Autopilot.
+								corev1.ResourceCPU:              resource.MustParse("1"),
+								corev1.ResourceMemory:           resource.MustParse("2Gi"),
+								corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
+							},
+						},
 					}},
 					Containers: []corev1.Container{{
 						Name:       "build",
@@ -161,7 +187,9 @@ else
   cat wolfi-signing.rsa.pub
   ls wolfi-signing.rsa
 fi
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} make %s
+
+unset -e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
 rm ${KEY}
 touch start-gsutil-cp
 echo exiting...
@@ -211,7 +239,7 @@ exit 0`, strings.Join(targets, " ")),
 			if bucket != "" {
 				p.Spec.Containers = append(p.Spec.Containers, corev1.Container{
 					Name:       "gsutil-cp",
-					Image:      "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim", // TODO: make this configurable?
+					Image:      gsutilImage,
 					WorkingDir: "/workspace",
 					Command: []string{"sh", "-c", fmt.Sprintf(`
 #!/usr/bin/env bash
