@@ -138,8 +138,7 @@ func cmdPod() *cobra.Command {
 							Name:      "workspace",
 							MountPath: "/workspace",
 						}},
-						Command: []string{
-							"sh", "-c", `
+						Command: []string{"bash", "-c", `
 set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
 mkdir -p ./packages/
@@ -172,9 +171,7 @@ find ./packages -print -exec touch \{} \;
 						SecurityContext: &corev1.SecurityContext{
 							Privileged: pointer.Bool(true),
 						},
-						Command: []string{
-							"sh", "-c",
-							fmt.Sprintf(`
+						Command: []string{"sh", "-c", fmt.Sprintf(`
 set -euo pipefail
 ls /var/cache/melange
 if [[ ! -f /var/secrets/melange.rsa ]]; then
