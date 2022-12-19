@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wolfi-dev/dag/pkg"
 	"golang.org/x/sync/errgroup"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -447,7 +449,12 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				if err != nil {
 					return err
 				}
+				log.Println("=== STATUS")
+				if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
+					return err
+				}
 				if p.Status.Phase == corev1.PodSucceeded {
+					log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
 					return nil
 				}
 				return fmt.Errorf("after log streaming, pod phase was %s", p.Status.Phase)
@@ -457,11 +464,22 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 				return nil
 			case corev1.PodFailed:
 				log.Println("failed!")
-				s := p.Status.ContainerStatuses[0].State.Terminated.Message
-				return fmt.Errorf("pod failed: %s", s)
+				log.Println("=== STATUS")
+				if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
+					return err
+				}
+				return errors.New("pod failed")
 			case corev1.PodUnknown:
 				log.Println("unknown status...")
+				log.Println("=== STATUS")
+				if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
+					return err
+				}
 			default:
+				log.Println("=== STATUS")
+				if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
+					return err
+				}
 				return fmt.Errorf("unknown phase: %s", p.Status.Phase)
 			}
 		}
