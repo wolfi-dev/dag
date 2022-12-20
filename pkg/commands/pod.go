@@ -43,7 +43,7 @@ func gcloudProjectID(ctx context.Context) (string, error) {
 }
 
 func cmdPod() *cobra.Command {
-	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket string
+	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket, srcBucket string
 	var create, watch, secretKey bool
 	var pendingTimeout time.Duration
 	pod := &cobra.Command{
@@ -138,13 +138,13 @@ func cmdPod() *cobra.Command {
 							Name:      "workspace",
 							MountPath: "/workspace",
 						}},
-						Command: []string{"bash", "-c", `
+						Command: []string{"bash", "-c", fmt.Sprintf(`
 set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
 mkdir -p ./packages/
-gsutil -m rsync -r gs://wolfi-production-registry-destination/os/ ./packages/
+gsutil -m rsync -r %s ./packages/
 find ./packages -print -exec touch \{} \;
-`},
+`, srcBucket)},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								// Minimums required by Autopilot.
@@ -318,6 +318,7 @@ gsutil -m cp -r "./packages/*" gs://%s`, bucket),
 	pod.Flags().StringVar(&cachedig, "cache-bundle", "", "if set, cache bundle reference by digest")
 	pod.Flags().BoolVar(&secretKey, "secret-key", false, "if true, bind a GCP secret named `melange-signing-key` into /var/secrets/melange.rsa (requires GKE and Workload Identity)")
 	pod.Flags().StringVar(&bucket, "bucket", "", "if set, upload contents of packages/* to a location in GCS")
+	pod.Flags().StringVar(&srcBucket, "src-bucket", "gs://wolfi-production-registry-destination/os/", "if set, download contents of packages/* from a location in GCS")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
