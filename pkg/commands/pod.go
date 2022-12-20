@@ -187,7 +187,8 @@ else
 fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make --touch %s
+find ./packages -print -exec touch \{} \;
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
 rm ${KEY}
 touch start-gsutil-cp
 echo exiting...
