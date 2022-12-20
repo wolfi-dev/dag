@@ -143,7 +143,6 @@ set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
 mkdir -p ./packages/
 gsutil -m rsync -r %s ./packages/
-find ./packages -print -exec touch \{} \;
 `, srcBucket)},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -188,7 +187,7 @@ else
 fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make --touch %s
 rm ${KEY}
 touch start-gsutil-cp
 echo exiting...
