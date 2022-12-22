@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/tools/clientcmd"
@@ -442,20 +443,24 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 
 				log.Println("log streaming done")
 
-				// Check one more time after log streaming what the status of the pod was.
-				p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
-				if err != nil {
+				// With log streaming done, poll until the Pod reports as Succeeded, or fail otherwise.
+				// Sometimes even when the containers are Completed successfully,
+				// the Pod doesn't say it's Succeeded for a little bit, and we shouldn't fail in that case.
+				if err := wait.PollImmediate(5*time.Second, time.Minute, func() (bool, error) {
+					p, err = k.clientset.CoreV1().Pods(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+					if err != nil {
+						return true, err
+					}
+					log.Println("=== STATUS")
+					if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
+						return true, err
+					}
+					return p.Status.Phase == corev1.PodSucceeded, nil
+				}); err != nil {
 					return err
 				}
-				log.Println("=== STATUS")
-				if err := yaml.NewEncoder(os.Stderr).Encode(p.Status); err != nil {
-					return err
-				}
-				if p.Status.Phase == corev1.PodSucceeded {
-					log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
-					return nil
-				}
-				return fmt.Errorf("after log streaming, pod phase was %s", p.Status.Phase)
+				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
+				return nil
 
 			case corev1.PodSucceeded:
 				log.Printf("succeeded! took %s", time.Now().Sub(p.CreationTimestamp.Time).Round(time.Second))
