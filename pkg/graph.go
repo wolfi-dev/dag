@@ -1,24 +1,21 @@
 package pkg
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
+	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 
-	"github.com/Masterminds/sprig"
+	"chainguard.dev/melange/pkg/build"
 	"github.com/dominikbraun/graph"
-	"gopkg.in/yaml.v3"
 )
 
 // A Graph represents an interdependent set of Wolfi packages defined in one or more Melange configuration files.
 type Graph struct {
 	Graph    graph.Graph[string, string]
-	configs  map[string]Config
+	configs  map[string]build.Configuration
 	packages []string
 }
 
@@ -31,11 +28,11 @@ func newGraph() graph.Graph[string, string] {
 // The input is any fs.FS filesystem implementation. Given a directory path, you can call NewGraph like this:
 //
 // pkg.NewGraph(os.DirFS('path/to/directory'))
-func NewGraph(dirFS fs.FS) (*Graph, error) {
+func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 	g := newGraph()
 
 	var packages []string
-	configs := make(map[string]Config)
+	configs := make(map[string]build.Configuration)
 
 	err := fs.WalkDir(dirFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -53,16 +50,24 @@ func NewGraph(dirFS fs.FS) (*Graph, error) {
 			}
 			defer f.Close()
 
-			c, err := decodeMelangeYAML(f)
+			p := filepath.Join(dirPath, path)
+			buildContext, err := build.New(build.WithConfig(p))
 			if err != nil {
 				return err
 			}
+
+			c := build.Configuration{}
+			err = (&c).Load(*buildContext)
+			if err != nil {
+				return err
+			}
+
 			name := c.Package.Name
 			if name == "" {
 				log.Fatalf("no package name in %q", path)
 			}
 			if _, exists := configs[name]; exists {
-				log.Fatalf("duplicate package config found for %q in %q", c.Package, path)
+				log.Fatalf("duplicate package config found for %q in %q", c.Package.Name, path)
 			}
 
 			configs[name] = c
@@ -91,11 +96,11 @@ func NewGraph(dirFS fs.FS) (*Graph, error) {
 			configs[subpkg.Name] = c
 			err := g.AddVertex(subpkg.Name)
 			if err != nil {
-				return nil, fmt.Errorf("unable to add vertex for %q subpackage %q: %w", name, subpkg, err)
+				return nil, fmt.Errorf("unable to add vertex for %q subpackage %q: %w", name, subpkg.Name, err)
 			}
 			err = g.AddEdge(subpkg.Name, c.Package.Name)
 			if err != nil {
-				return nil, fmt.Errorf("unable to add edge for %q subpackage %q: %w", name, subpkg, err)
+				return nil, fmt.Errorf("unable to add edge for %q subpackage %q: %w", name, subpkg.Name, err)
 			}
 		}
 
@@ -125,41 +130,6 @@ func NewGraph(dirFS fs.FS) (*Graph, error) {
 	}, nil
 }
 
-func decodeMelangeYAML(f fs.File) (Config, error) {
-	stat, err := f.Stat()
-	if err != nil {
-		return Config{}, err
-	}
-
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
-	}
-
-	protected := string(b)
-	for k, v := range substitutionReplacements() {
-		protected = strings.ReplaceAll(protected, k, v)
-	}
-
-	tmpl, err := template.New("").Funcs(sprig.TxtFuncMap()).Parse(protected)
-	if err != nil {
-		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
-	}
-
-	buf := new(bytes.Buffer)
-	err = tmpl.Execute(buf, nil)
-	if err != nil {
-		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
-	}
-
-	var c Config
-	if err := yaml.NewDecoder(buf).Decode(&c); err != nil {
-		return Config{}, fmt.Errorf("unable to decode %q: %w", stat.Name(), err)
-	}
-
-	return c, nil
-}
-
 func isErrCycle(err error) bool {
 	// TODO: suggest to the upstream graph lib that this be detectable via errors.As
 	return strings.Contains(err.Error(), "would introduce a cycle")
@@ -169,7 +139,7 @@ func isErrCycle(err error) bool {
 // if the package is present in the Graph. If it's not present, Config returns
 // nil. Providing the name of a subpackage will return the configuration of the
 // subpackage's origin package.
-func (g Graph) Config(name string) *Config {
+func (g Graph) Config(name string) *build.Configuration {
 	if g.configs == nil {
 		// this would be unexpected
 		return nil
@@ -216,7 +186,7 @@ func (g Graph) Sorted() ([]string, error) {
 // of all packages whose names were given as the `roots` argument.
 func (g Graph) SubgraphWithRoots(roots []string) (*Graph, error) {
 	subgraph := newGraph()
-	configs := make(map[string]Config)
+	configs := make(map[string]build.Configuration)
 	var packages []string
 
 	adjacencyMap, err := g.Graph.AdjacencyMap()
@@ -261,7 +231,7 @@ func (g Graph) SubgraphWithRoots(roots []string) (*Graph, error) {
 // are dependent on the packages whose names were given as the `leaves` argument.
 func (g Graph) SubgraphWithLeaves(leaves []string) (*Graph, error) {
 	subgraph := newGraph()
-	configs := make(map[string]Config)
+	configs := make(map[string]build.Configuration)
 	var packages []string
 
 	predecessorMap, err := g.Graph.PredecessorMap()
@@ -308,7 +278,7 @@ func (g Graph) MakeTarget(pkgName, arch string) (string, error) {
 	p := config.Package
 
 	// note: using pkgName here because it may be a subpackage, not the main package declared within the config (i.e. `p.Name`)
-	return fmt.Sprintf("packages/%s/%s-%s-r%s.apk", arch, pkgName, p.Version, p.Epoch), nil
+	return fmt.Sprintf("packages/%s/%s-%s-r%d.apk", arch, pkgName, p.Version, p.Epoch), nil
 }
 
 // Nodes returns a slice of the names of all nodes in the Graph, sorted alphabetically.
