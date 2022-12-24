@@ -13,7 +13,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v2.4.0
-
       - uses: actions/setup-go@268d8c0ca0432bb2cf416faae41297df9d262d7f # v3.0.0
         with:
           go-version: 1.19
@@ -22,3 +21,9 @@ jobs:
       - uses: chainguard-dev/actions/goimports@main
       - run: go build ./...
       - run: go test ./...
+
+      # Checkout Wolfi to make sure we can parse its configs and generate a graph
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b # v2.4.0
+        repository: wolfi-dev/os
+        path: wolfi-os
+      - run: go run ./ svg -d ../wolfi-os
