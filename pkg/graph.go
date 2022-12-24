@@ -98,10 +98,26 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			if err != nil {
 				return nil, fmt.Errorf("unable to add vertex for %q subpackage %q: %w", name, subpkg.Name, err)
 			}
-			err = g.AddEdge(subpkg.Name, c.Package.Name)
-			if err != nil {
+			if err := g.AddEdge(subpkg.Name, c.Package.Name); err != nil {
 				return nil, fmt.Errorf("unable to add edge for %q subpackage %q: %w", name, subpkg.Name, err)
 			}
+
+			// TODO: resolve deps via `uses` for subpackage pipelines.
+		}
+
+		// Resolve all `uses` used by the pipeline. This updates the set of
+		// .environment.contents.packages so the next block can include those as build deps.
+		pctx := &build.PipelineContext{
+			Context: &build.Context{
+				Configuration: c,
+			},
+			Package: &c.Package,
+		}
+		for _, s := range c.Pipeline {
+			if err := s.ApplyNeeds(pctx); err != nil {
+				return nil, fmt.Errorf("unable to resolve needs for package %s", name)
+			}
+			c.Environment.Contents.Packages = pctx.Context.Configuration.Environment.Contents.Packages
 		}
 
 		for _, buildDep := range c.Environment.Contents.Packages {
@@ -170,7 +186,7 @@ func (g Graph) IsSubpackage(name string) bool {
 // order, meaning that packages earlier in the list depend on packages later in
 // the list.
 func (g Graph) Sorted() ([]string, error) {
-	sorted, err := graph.TopologicalSort[string, string](g.Graph)
+	sorted, err := graph.TopologicalSort(g.Graph)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +316,7 @@ func (g Graph) DependenciesOf(node string) []string {
 	var dependencies []string
 
 	if deps, ok := adjacencyMap[node]; ok {
-		for dep, _ := range deps {
+		for dep := range deps {
 			dependencies = append(dependencies, dep)
 		}
 
