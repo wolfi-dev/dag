@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -28,7 +27,7 @@ func newGraph() graph.Graph[string, string] {
 // The input is any fs.FS filesystem implementation. Given a directory path, you can call NewGraph like this:
 //
 // pkg.NewGraph(os.DirFS('path/to/directory'))
-func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
+func NewGraph(dirFS fs.FS) (*Graph, error) {
 	g := newGraph()
 
 	var packages []string
@@ -50,14 +49,7 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			}
 			defer f.Close()
 
-			p := filepath.Join(dirPath, path)
-			buildContext, err := build.New(build.WithConfig(p))
-			if err != nil {
-				return err
-			}
-
-			c := build.Configuration{}
-			err = (&c).Load(*buildContext)
+			c, err := build.ParseConfiguration(path, build.WithFS(dirFS))
 			if err != nil {
 				return err
 			}
@@ -70,7 +62,7 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 				log.Fatalf("duplicate package config found for %q in %q", c.Package.Name, path)
 			}
 
-			configs[name] = c
+			configs[name] = *c
 			packages = append(packages, name)
 
 			g.AddVertex(name)

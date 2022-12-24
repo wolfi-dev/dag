@@ -71,7 +71,7 @@ func cmdPod() *cobra.Command {
 
 			targets := []string{"all"}
 			if len(args) > 0 {
-				g, err := pkg.NewGraph(os.DirFS(dir), dir)
+				g, err := pkg.NewGraph(os.DirFS(dir))
 				if err != nil {
 					return err
 				}

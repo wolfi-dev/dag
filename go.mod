@@ -9,7 +9,7 @@ replace k8s.io/client-go => k8s.io/client-go v0.25.3
 
 require (
 	chainguard.dev/apko v0.6.0
-	chainguard.dev/melange v0.2.0
+	chainguard.dev/melange v0.2.1-0.20221224013000-48eb9de39a0d
 	github.com/dominikbraun/graph v0.14.0
 	github.com/goccy/go-graphviz v0.0.9
 	github.com/google/go-containerregistry v0.12.1
@@ -24,6 +24,7 @@ require (
 )
 
 require (
+	chainguard.dev/vex v0.0.3-0.20221224011205-1d4b8701e0dd // indirect
 	cloud.google.com/go v0.107.0 // indirect
 	cloud.google.com/go/compute v1.14.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
@@ -155,7 +156,7 @@ require (
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/term v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
-	golang.org/x/time v0.2.0 // indirect
+	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.4.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.105.0 // indirect

@@ -18,7 +18,7 @@ func cmdSVG() *cobra.Command {
 		Use:   "svg",
 		Short: "Generate a graphviz SVG",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, err := pkg.NewGraph(os.DirFS(dir), dir)
+			g, err := pkg.NewGraph(os.DirFS(dir))
 			if err != nil {
 				return err
 			}

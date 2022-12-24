@@ -22,7 +22,7 @@ func cmdText() *cobra.Command {
 				arch = "aarch64"
 			}
 
-			g, err := pkg.NewGraph(os.DirFS(dir), dir)
+			g, err := pkg.NewGraph(os.DirFS(dir))
 			if err != nil {
 				return err
 			}
