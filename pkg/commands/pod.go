@@ -56,10 +56,6 @@ func cmdPod() *cobra.Command {
 
 			arch := types.ParseArchitecture(arch).ToAPK()
 
-			if arch != "armv7" {
-				log.Fatalf("arch was %s, want arm/v7", arch)
-			}
-
 			if (bundleRepo == "" || secretKey) && project == "" {
 				var err error
 				project, err = gcloudProjectID(ctx)
@@ -193,7 +189,7 @@ fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
 find ./packages -print -exec touch \{} \;
-ARCH=%s MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
 success=$?
 rm ${KEY}
 touch start-gsutil-cp
