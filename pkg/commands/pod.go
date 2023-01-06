@@ -143,8 +143,8 @@ func cmdPod() *cobra.Command {
 set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
 mkdir -p ./packages/
-gsutil -m rsync -r %s ./packages/
-`, srcBucket)},
+gsutil -m rsync -r %s%s ./packages/ || true
+`, srcBucket, arch)},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								// Minimums required by Autopilot.
@@ -190,10 +190,12 @@ fi
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
 find ./packages -print -exec touch \{} \;
 MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
+success=$?
 rm ${KEY}
 touch start-gsutil-cp
-echo exiting...
-exit 0`, strings.Join(targets, " ")),
+echo exiting $success...
+exit $success
+`, strings.Join(targets, " ")),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
