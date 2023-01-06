@@ -115,7 +115,7 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 		}
 		for _, s := range c.Pipeline {
 			if err := s.ApplyNeeds(pctx); err != nil {
-				return nil, fmt.Errorf("unable to resolve needs for package %s", name)
+				return nil, fmt.Errorf("unable to resolve needs for package %s: %w", name, err)
 			}
 			c.Environment.Contents.Packages = pctx.Context.Configuration.Environment.Contents.Packages
 		}
