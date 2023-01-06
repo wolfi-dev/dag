@@ -195,7 +195,7 @@ rm ${KEY}
 touch start-gsutil-cp
 echo exiting $success...
 exit $success
-`, arch, strings.Join(targets, " ")),
+`, strings.Join(targets, " ")),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
