@@ -142,9 +142,9 @@ func cmdPod() *cobra.Command {
 						Command: []string{"bash", "-c", fmt.Sprintf(`
 set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
-mkdir -p ./packages/
-gsutil -m rsync -r %s%s ./packages/ || true
-`, srcBucket, arch)},
+mkdir -p ./packages/%s
+gsutil -m rsync -r %s%s ./packages/%s || true
+`, arch, srcBucket, arch, arch)},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								// Minimums required by Autopilot.
