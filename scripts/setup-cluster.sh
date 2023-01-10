@@ -49,3 +49,41 @@ spec:
       - resourceName: "projects/${PROJECT}/secrets/melange-signing-key/versions/latest"
         path: "melange.rsa"
 EOF
+
+# Set up qemu binfmt emulation.
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: binfmt
+  labels:
+    app: binfmt-setup
+spec:
+  selector:
+    matchLabels:
+      name: binfmt
+  template:
+    metadata:
+      labels:
+        name: binfmt
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      initContainers:
+        - name: binfmt
+          image: tonistiigi/binfmt
+          args: ["--install", "all"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: pause
+          image: gcr.io/google_containers/pause
+          resources:
+            limits:
+              cpu: 50m
+              memory: 50Mi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+EOF
