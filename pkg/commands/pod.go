@@ -189,13 +189,13 @@ fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
 find ./packages -print -exec touch \{} \;
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} REPO=./packages make %s
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} ARCH=%s REPO=./packages make %s
 success=$?
 rm ${KEY}
 touch start-gsutil-cp
 echo exiting $success...
 exit $success
-`, strings.Join(targets, " ")),
+`, arch, strings.Join(targets, " ")),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -280,7 +280,7 @@ gsutil -m cp -r "./packages/*" gs://%s`, bucket),
 				})
 			}
 
-			if arch == "aarch64" {
+			if arch == "aarch64" || arch == "armv7" {
 				p.Spec.NodeSelector = map[string]string{
 					//"cloud.google.com/compute-class": "Scale-Out", TODO(jason): Needed for GKE Autopilot.
 					"kubernetes.io/arch": "arm64",
