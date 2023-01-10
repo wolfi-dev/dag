@@ -280,7 +280,7 @@ gsutil -m cp -r "./packages/*" gs://%s`, bucket),
 				})
 			}
 
-			if arch == "aarch64" || arch == "armv7" {
+			if arch == "aarch64" {
 				p.Spec.NodeSelector = map[string]string{
 					//"cloud.google.com/compute-class": "Scale-Out", TODO(jason): Needed for GKE Autopilot.
 					"kubernetes.io/arch": "arm64",
