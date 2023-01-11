@@ -51,13 +51,8 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			defer f.Close()
 
 			p := filepath.Join(dirPath, path)
-			buildContext, err := build.New(build.WithConfig(p))
+			c, err := build.ParseConfiguration(p)
 			if err != nil {
-				return err
-			}
-
-			c := build.Configuration{}
-			if err := (&c).Load(*buildContext); err != nil {
 				return err
 			}
 
@@ -69,7 +64,7 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 				log.Fatalf("duplicate package config found for %q in %q", c.Package.Name, path)
 			}
 
-			configs[name] = c
+			configs[name] = *c
 			packages = append(packages, name)
 
 			for _, prov := range c.Package.Dependencies.Provides {
