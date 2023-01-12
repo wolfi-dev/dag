@@ -70,8 +70,8 @@ func cmdText() *cobra.Command {
 type textType string
 
 const (
-	typeTarget       = "target"
-	typeMakefileLine = "makefile"
+	typeTarget       textType = "target"
+	typeMakefileLine textType = "makefile"
 )
 
 func reverse(ss []string) {
@@ -95,7 +95,9 @@ func text(g pkg.Graph, arch string, t textType, w io.Writer) error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "%s\n", target)
+			if target != "" {
+				fmt.Fprintf(w, "%s\n", target)
+			}
 		case typeMakefileLine:
 			entry, err := g.MakefileEntry(node)
 			if err != nil {

@@ -279,6 +279,9 @@ func (g Graph) MakeTarget(pkgName, arch string) (string, error) {
 	if config == nil {
 		return "", fmt.Errorf("unable to generate target: no config for package %q", pkgName)
 	}
+	if pkgName != config.Package.Name {
+		return "", nil
+	}
 
 	p := config.Package
 
