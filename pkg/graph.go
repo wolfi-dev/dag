@@ -51,13 +51,7 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			defer f.Close()
 
 			p := filepath.Join(dirPath, path)
-			buildContext, err := build.New(build.WithConfig(p))
-			if err != nil {
-				return err
-			}
-
-			c := build.Configuration{}
-			err = (&c).Load(*buildContext)
+			c, err := build.ParseConfiguration(p)
 			if err != nil {
 				return err
 			}
@@ -66,12 +60,28 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			if name == "" {
 				log.Fatalf("no package name in %q", path)
 			}
-			if _, exists := configs[name]; exists {
+			if p, exists := configs[name]; exists && !strings.HasPrefix(p.Package.Description, "PROVIDED BY") {
 				log.Fatalf("duplicate package config found for %q in %q", c.Package.Name, path)
 			}
 
-			configs[name] = c
+			configs[name] = *c
 			packages = append(packages, name)
+
+			for _, prov := range c.Package.Dependencies.Provides {
+				p, v, ok := strings.Cut(prov, "=")
+				if !ok {
+					log.Fatalf("don't know how to interpret %q in %s", prov, path)
+				}
+				if _, exists := configs[p]; !exists {
+					configs[p] = build.Configuration{
+						Package: build.Package{
+							Name:        p,
+							Version:     v,
+							Description: fmt.Sprintf("PROVIDED BY %s", c.Package.Name),
+						},
+					}
+				}
+			}
 
 			g.AddVertex(name)
 		}
@@ -124,12 +134,10 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 			if buildDep == "" {
 				log.Fatalf("empty package name in environment packages for %q", c.Package.Name)
 			}
-			err = g.AddVertex(buildDep)
-			if err != nil {
+			if err := g.AddVertex(buildDep); err != nil {
 				return nil, fmt.Errorf("unable to add vertex for %q dependency %q: %w", name, buildDep, err)
 			}
-			err = g.AddEdge(c.Package.Name, buildDep)
-			if err != nil {
+			if err := g.AddEdge(c.Package.Name, buildDep); err != nil {
 				if isErrCycle(err) {
 					log.Printf("warning: package %q depedendency on %q would introduce a cycle, so %q needs to be provided via bootstrapping", name, buildDep, buildDep)
 				} else {
@@ -168,30 +176,11 @@ func (g Graph) Config(name string) *build.Configuration {
 	return nil
 }
 
-// IsSubpackage returns a bool indicating whether the package with the given name
-// is a subpackage. If the package is an origin package, or if the package is not
-// found in the graph, IsSubpackage returns false.
-func (g Graph) IsSubpackage(name string) bool {
-	c := g.Config(name)
-
-	if c == nil {
-		// This (sub)package doesn't exist in the graph.
-		return false
-	}
-
-	return c.Package.Name != name
-}
-
 // Sorted returns a list of all package names in the Graph, sorted in topological
 // order, meaning that packages earlier in the list depend on packages later in
 // the list.
 func (g Graph) Sorted() ([]string, error) {
-	sorted, err := graph.TopologicalSort(g.Graph)
-	if err != nil {
-		return nil, err
-	}
-
-	return sorted, nil
+	return graph.TopologicalSort(g.Graph)
 }
 
 // SubgraphWithRoots returns a new Graph that's a subgraph of g, where the set of
@@ -290,11 +279,25 @@ func (g Graph) MakeTarget(pkgName, arch string) (string, error) {
 	if config == nil {
 		return "", fmt.Errorf("unable to generate target: no config for package %q", pkgName)
 	}
+	if pkgName != config.Package.Name {
+		return "", nil
+	}
 
 	p := config.Package
 
 	// note: using pkgName here because it may be a subpackage, not the main package declared within the config (i.e. `p.Name`)
-	return fmt.Sprintf("packages/%s/%s-%s-r%d.apk", arch, pkgName, p.Version, p.Epoch), nil
+	return fmt.Sprintf("make packages/%s/%s-%s-r%d.apk", arch, pkgName, p.Version, p.Epoch), nil
+}
+
+func (g Graph) MakefileEntry(pkgName string) (string, error) {
+	config := g.Config(pkgName)
+	if config == nil {
+		return "", fmt.Errorf("unable to generate target: no config for package %q", pkgName)
+	}
+	if pkgName != config.Package.Name {
+		return "", nil
+	}
+	return fmt.Sprintf("$(eval $(call build-package,%s,%s-%d))", pkgName, config.Package.Version, config.Package.Epoch), nil
 }
 
 // Nodes returns a slice of the names of all nodes in the Graph, sorted alphabetically.
