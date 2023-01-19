@@ -316,7 +316,7 @@ gsutil -m cp -r "./packages/*" gs://%s`, bucket),
 	pod.Flags().StringVar(&sa, "service-account", "default", "service account to use")
 	pod.Flags().BoolVar(&create, "create", true, "create the pod")
 	pod.Flags().BoolVarP(&watch, "watch", "w", true, "watch the pod, stream logs")
-	pod.Flags().StringVar(&sdkimg, "sdk-image", "cgr.dev/chainguard/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
+	pod.Flags().StringVar(&sdkimg, "sdk-image", "ghcr.io/wolfi-dev/sdk:latest", "sdk image to use") // alpine-based, but supports arm64
 	pod.Flags().DurationVar(&pendingTimeout, "pending-timeout", 5*time.Minute, "timeout for the pod to start")
 	pod.Flags().StringVar(&cachedig, "cache-bundle", "", "if set, cache bundle reference by digest")
 	pod.Flags().BoolVar(&secretKey, "secret-key", false, "if true, bind a GCP secret named `melange-signing-key` into /var/secrets/melange.rsa (requires GKE and Workload Identity)")
