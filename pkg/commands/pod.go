@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	gotemplate "text/template"
 	"time"
 
 	"chainguard.dev/apko/pkg/build/types"
@@ -139,13 +140,17 @@ func cmdPod() *cobra.Command {
 							Name:      "workspace",
 							MountPath: "/workspace",
 						}},
-						Command: []string{"bash", "-c", fmt.Sprintf(`
+						Command: []string{"bash", "-c", template(`
 set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
-mkdir -p ./packages/%s
-gsutil -m rsync -r %s%s ./packages/%s || true
-gsutil cp %s%s.rsa.pub .
-`, arch, srcBucket, arch, arch, srcBucket, signingKeyName)},
+mkdir -p ./packages/{{.arch}}
+gsutil -m rsync -r {{.bucket}}{{.arch}} ./packages/{{.arch}} || true
+gsutil cp {{.bucket}}{{.signingKeyName}}.rsa.pub .
+`, map[string]string{
+							"arch":           arch,
+							"bucket":         srcBucket,
+							"signingKeyName": signingKeyName,
+						})},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								// Minimums required by Autopilot.
@@ -172,7 +177,7 @@ gsutil cp %s%s.rsa.pub .
 						SecurityContext: &corev1.SecurityContext{
 							Privileged: pointer.Bool(true),
 						},
-						Command: []string{"sh", "-c", fmt.Sprintf(`
+						Command: []string{"sh", "-c", template(`
 set -euo pipefail
 ls /var/cache/melange
 if [[ ! -f /var/secrets/melange.rsa ]]; then
@@ -181,22 +186,25 @@ if [[ ! -f /var/secrets/melange.rsa ]]; then
   KEY=melange.rsa
 else
   echo "Using secret key..."
-  cp /var/secrets/melange.rsa %s.rsa
-  cp ./packages/*.rsa.pub .
-  KEY=%s.rsa
-  ls %s.rsa
+  cp /var/secrets/melange.rsa {{.signingKeyName}}.rsa
+  cp ./packages/*.rsa.pub
+  KEY={{.signingKeyName}}.rsa
+  ls {{.signingKeyName}}.rsa
 fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
 find ./packages -print -exec touch \{} \;
-MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} ARCH=%s REPO=./packages make %s
+MELANGE=/usr/bin/melange MELANGE_DIR=/usr/share/melange KEY=${KEY} ARCH={{.arch}} REPO=./packages make {{.targets}}
 success=$?
 rm ${KEY}
 touch start-gsutil-cp
 echo exiting $success...
 exit $success
-`, signingKeyName, signingKeyName, signingKeyName, arch, strings.Join(targets, " ")),
-						},
+`, map[string]string{
+							"signingKeyName": signingKeyName,
+							"arch":           arch,
+							"targets":        strings.Join(targets, " "),
+						})},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:              resource.MustParse(cpu),
@@ -243,7 +251,7 @@ exit $success
 					Name:       "gsutil-cp",
 					Image:      gsutilImage,
 					WorkingDir: "/workspace",
-					Command: []string{"sh", "-c", fmt.Sprintf(`
+					Command: []string{"sh", "-c", template(`
 #!/usr/bin/env bash
 interval=10
 while true;
@@ -251,7 +259,7 @@ do
   [ -f start-gsutil-cp ] && break
   sleep $interval
 done
-gsutil -m cp -r "./packages/*" gs://%s`, bucket),
+gsutil -m cp -r "./packages/*" gs://{{.bucket}}`, map[string]string{"bucket": bucket}),
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "workspace",
@@ -490,4 +498,14 @@ func (k *k8s) watch(ctx context.Context, p *corev1.Pod) error {
 			}
 		}
 	}
+}
+
+func template(tmpl string, data map[string]string) string {
+	var buf bytes.Buffer
+	t := gotemplate.Must(gotemplate.New("").Parse(tmpl))
+	t.Option("missingkey=error")
+	if err := t.Execute(&buf, data); err != nil {
+		log.Fatalf("Executing template: %v", err)
+	}
+	return buf.String()
 }
