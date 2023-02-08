@@ -44,7 +44,7 @@ func gcloudProjectID(ctx context.Context) (string, error) {
 }
 
 func cmdPod() *cobra.Command {
-	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket, srcBucket string
+	var dir, arch, project, bundleRepo, ns, cpu, ram, sa, sdkimg, cachedig, bucket, srcBucket, signingKeyName string
 	var create, watch, secretKey bool
 	var pendingTimeout time.Duration
 	pod := &cobra.Command{
@@ -180,11 +180,10 @@ if [[ ! -f /var/secrets/melange.rsa ]]; then
   KEY=melange.rsa
 else
   echo "Using secret key..."
-  cp /var/secrets/melange.rsa wolfi-signing.rsa
-  wget -O wolfi-signing.rsa.pub https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
-  KEY=wolfi-signing.rsa
-  cat wolfi-signing.rsa.pub
-  ls wolfi-signing.rsa
+  cp /var/secrets/melange.rsa %s.rsa
+  cp packages/*.rsa.pub .
+  KEY=%s.rsa
+  ls %s.rsa
 fi
 
 set +e # Always touch start-gsutil-cp to start uploading buitl packages, even if the build fails.
@@ -195,7 +194,7 @@ rm ${KEY}
 touch start-gsutil-cp
 echo exiting $success...
 exit $success
-`, arch, strings.Join(targets, " ")),
+`, signingKeyName, signingKeyName, signingKeyName, arch, strings.Join(targets, " ")),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -322,6 +321,7 @@ gsutil -m cp -r "./packages/*" gs://%s`, bucket),
 	pod.Flags().BoolVar(&secretKey, "secret-key", false, "if true, bind a GCP secret named `melange-signing-key` into /var/secrets/melange.rsa (requires GKE and Workload Identity)")
 	pod.Flags().StringVar(&bucket, "bucket", "", "if set, upload contents of packages/* to a location in GCS")
 	pod.Flags().StringVar(&srcBucket, "src-bucket", "gs://wolfi-production-registry-destination/os/", "if set, download contents of packages/* from a location in GCS")
+	pod.Flags().StringVar(&signingKeyName, "signing-key-name", "wolfi-signing", "the signing key name to use, the name is important when when signing e.g. keyName=wolfi-signing")
 	pod.MarkFlagRequired("repo")
 	return pod
 }
