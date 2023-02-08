@@ -144,7 +144,8 @@ set -euo pipefail
 # Download all packages so we can avoid rebuilding them.
 mkdir -p ./packages/%s
 gsutil -m rsync -r %s%s ./packages/%s || true
-`, arch, srcBucket, arch, arch)},
+gsutil cp %s%s.rsa.pub .
+`, arch, srcBucket, arch, arch, srcBucket, signingKeyName)},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								// Minimums required by Autopilot.
@@ -181,7 +182,7 @@ if [[ ! -f /var/secrets/melange.rsa ]]; then
 else
   echo "Using secret key..."
   cp /var/secrets/melange.rsa %s.rsa
-  cp packages/*.rsa.pub .
+  cp ./packages/*.rsa.pub .
   KEY=%s.rsa
   ls %s.rsa
 fi
