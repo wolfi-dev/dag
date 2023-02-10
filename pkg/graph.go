@@ -58,7 +58,8 @@ func NewGraph(dirFS fs.FS, dirPath string) (*Graph, error) {
 
 			name := c.Package.Name
 			if name == "" {
-				log.Fatalf("no package name in %q", path)
+				log.Printf("no package name in %q", path)
+				return nil
 			}
 			if p, exists := configs[name]; exists && !strings.HasPrefix(p.Package.Description, "PROVIDED BY") {
 				log.Fatalf("duplicate package config found for %q in %q", c.Package.Name, path)
